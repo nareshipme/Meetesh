@@ -58,7 +58,8 @@ export interface ModelLoadEvent {
   state: LoadState;
   /** 0..1 when the loader reports real progress; null = indeterminate. */
   progress: number | null;
-  backend: "GPU" | "CPU" | null;
+  /** "GPU", "CPU", or "CPU (GPU failed)" when the GPU could not run the model. */
+  backend: string | null;
   error: string | null;
 }
 

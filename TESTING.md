@@ -66,7 +66,7 @@ MEETESH_TEST_MODEL=/path/to/ggml-tiny.en.bin \
 - [ ] Quit and reopen the app with both models installed. A bar at the top shows "Loading Gemma 4 E2B · N%" (a real percentage), then "Warming up", and disappears. The sidebar rows go from "Loading into memory N%" to "ready · GPU" (or "ready · CPU").
 - [ ] While it is loading you can already create meetings and record. The **✦ Hint** button is greyed out with a tooltip until the model is ready.
 - [ ] Right after a download finishes, the model loads without any click.
-- [ ] Note how long loading and warm-up take, and which backend (GPU or CPU) the row reports.
+- [ ] Note how long loading and warm-up take, and which backend the row reports: "GPU", "CPU", or "CPU (GPU failed)". The last means the GPU path failed at startup; please send the log line "GPU failed while warming up ... (reason)".
 
 **Live assist** (needs the live-assist model)
 - [ ] While recording (or on any meeting that has a transcript), click **✦ Hint** or press Ctrl/Cmd+Shift+H. The first hint is as quick as the later ones, because the model is already loaded. Text streams into a blue panel above the transcript.

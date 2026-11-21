@@ -90,7 +90,12 @@ fn load_one(app: &AppHandle, entry: &ModelEntry) -> Result<String> {
             })?;
             // The first request compiles GPU kernels and settles GPU versus CPU; do it now.
             publish(app, ModelLoadEvent { progress: Some(1.0), ..event(entry, LoadState::Warming) });
-            assistant.warm_up()?;
+            let warm = assistant.warm_up()?;
+            if let Some(reason) = &warm.fallback_reason {
+                // The GPU could not run the model, so the CPU took over during warm-up.
+                log::warn!("GPU failed while warming up {} ({reason}); using the CPU", entry.id);
+                return Ok("CPU (GPU failed)".into());
+            }
             Ok(if assistant.uses_gpu() { "GPU" } else { "CPU" }.into())
         }
         Role::Summary => Ok("CPU".into()),

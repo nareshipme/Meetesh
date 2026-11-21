@@ -141,6 +141,7 @@ fn reports_load_progress_warms_up_and_recovers_from_a_gpu_failure() {
         .expect("falls back and succeeds");
     eprintln!("after injected GPU failure: cpu_fallback={} on_gpu={} text={:?}", done.stats.cpu_fallback, done.stats.on_gpu, done.text);
     assert!(done.stats.cpu_fallback && !done.stats.on_gpu);
+    assert!(done.stats.fallback_reason.as_deref().is_some_and(|r| r.contains("decode failed")), "{:?}", done.stats.fallback_reason);
     assert!(!done.text.is_empty());
     assert_eq!(pieces, done.text, "no text was duplicated by the retry");
     assert!(!a.uses_gpu(), "later requests stay on the CPU");

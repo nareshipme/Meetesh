@@ -5,7 +5,7 @@
 [![CI](https://github.com/nareshipme/Meetesh/actions/workflows/ci.yml/badge.svg)](https://github.com/nareshipme/Meetesh/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-> **Status: early, pre-alpha.** Recording, live transcription and live assist work. They run in CI and on Linux, and have been tried by hand on macOS; Windows builds compile in CI but have not been run. Expect rough edges. Contributions and bug reports are very welcome.
+> **Status: early, pre-alpha.** Recording, live transcription and live assist work. The app has been opened and used by hand on macOS and Windows, and the maintainer found the generated hints good enough for a first version. CI builds and tests it on Linux, macOS and Windows. Expect rough edges (see [Known issues](#known-issues-and-planned-work)). Contributions and bug reports are very welcome.
 
 The name comes from *ishara* (इशारा), Hindi/Urdu for a quiet hint or signal, like a glance across the table.
 
@@ -16,6 +16,23 @@ The name comes from *ishara* (इशारा), Hindi/Urdu for a quiet hint or s
 - **Light and native.** Built with [Tauri](https://tauri.app) and Rust, not Electron.
 - **Swappable models.** Models are listed in a manifest, not hard-coded, so improving or replacing one is a data change.
 - **Open source (MIT).** Read it, fork it, improve it.
+
+## Screenshots
+
+These show the interface running against the built-in sample-data backend (see [CONTRIBUTING.md](CONTRIBUTING.md)), so the transcript text is sample text, not a real recording.
+
+![A meeting with its transcript and a hint from the on-device model](docs/screenshots/meeting-hint.png)
+*A meeting with meeting goals, the transcript, and a hint streamed from the on-device model.*
+
+![Recording with live text and a level meter](docs/screenshots/recording-live.png)
+*Recording: live text appears a few seconds behind speech.*
+
+![Models loading in the background at startup](docs/screenshots/models-loading.png)
+*Models load in the background at startup, with progress.*
+
+<img src="docs/screenshots/narrow-dark.png" alt="The same screen at phone width in dark mode" width="320">
+
+*A narrow window in dark mode: one pane at a time.*
 
 ## What works today
 
@@ -43,11 +60,26 @@ The name comes from *ishara* (इशारा), Hindi/Urdu for a quiet hint or s
 | Then | Settings and onboarding, signed installers and auto-update |
 | Later | Mobile companion app, speaker labels, audio-file import |
 
+## Known issues and planned work
+
+Tracked as GitHub issues:
+
+| Issue | Kind |
+|---|---|
+| [#3 GPU is not used for model inference](https://github.com/nareshipme/Meetesh/issues/3) | Bug |
+| [#4 Missing words in the live transcript: improve audio before transcription](https://github.com/nareshipme/Meetesh/issues/4) | Improvement |
+| [#5 Live transcription lags while a hint is being generated](https://github.com/nareshipme/Meetesh/issues/5) | Bug |
+| [#6 One-click new recording](https://github.com/nareshipme/Meetesh/issues/6) | Improvement |
+| [#7 Auto-generate the meeting title with the local model](https://github.com/nareshipme/Meetesh/issues/7) | Feature |
+| [#8 Decide: should users be able to choose their models?](https://github.com/nareshipme/Meetesh/issues/8) | Design question |
+
 ## Limitations
 
 - Hints are requested manually for now.
 - The live-assist model is a 3.1 GB download and, once downloaded, is loaded into memory at every start (about 4 GB). A per-user switch to load it only on demand is planned.
-- On a CPU-only 4-core Linux machine a hint takes about 6 s. GPU acceleration (Metal on macOS) should be much faster; it is enabled but its speed is not yet measured.
+- Models may run on the CPU even when a GPU is present ([#3](https://github.com/nareshipme/Meetesh/issues/3)). On a CPU-only 4-core Linux machine a hint takes about 6 s.
+- While a hint is generated, live transcription can lag ([#5](https://github.com/nareshipme/Meetesh/issues/5)).
+- Some words can be missing from the live transcript ([#4](https://github.com/nareshipme/Meetesh/issues/4)).
 - Microphone only. It cannot yet capture the other side of a call.
 - English-only speech models are in the manifest for now.
 - One recording per meeting.
@@ -55,7 +87,7 @@ The name comes from *ishara* (इशारा), Hindi/Urdu for a quiet hint or s
 
 ## Troubleshooting
 
-**"llama decode failed" when asking for a hint.** The GPU could not run the model (this was seen with Metal on macOS). Meetesh now retries on the CPU automatically and labels the hint "CPU (fallback)". To help us find the cause, run the app from a terminal with llama.cpp's own logs switched on and send us the lines around the error, plus your Mac model, chip, macOS version and memory:
+**"llama decode failed" when asking for a hint.** The GPU could not run the model (this was seen with Metal on macOS). Meetesh now retries on the CPU automatically and labels the hint "CPU (fallback)". If the live-assist row in the sidebar says **"CPU (GPU failed)"**, the GPU path failed while the model warmed up at startup, and the reason is written to the log. To help us find the cause, run the app from a terminal with llama.cpp's own logs switched on and send us the lines around the error, plus your Mac model, chip, macOS version and memory:
 
 ```bash
 MEETESH_LLAMA_LOGS=1 npm run tauri dev

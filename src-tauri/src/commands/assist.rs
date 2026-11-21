@@ -65,6 +65,9 @@ pub fn request_hint(app: AppHandle, meeting_id: i64) -> Result<u64> {
                     if c.stats.on_gpu { "GPU" } else { "CPU" },
                     if c.stats.cpu_fallback { " (GPU failed, fell back to CPU)" } else { "" }
                 );
+                if let Some(reason) = &c.stats.fallback_reason {
+                    log::warn!("GPU failure reason: {reason}");
+                }
                 HintDoneEvent {
                     meeting_id,
                     hint_id,

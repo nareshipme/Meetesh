@@ -333,6 +333,7 @@ impl Assistant for LlamaAssistant {
                     .run(&st.model, false, messages, opts, &mut tracked)
                     .map_err(|e2| lerr("failed on both GPU and CPU", format!("GPU: {}; CPU: {}", e.err, e2.err)))?;
                 c.stats.cpu_fallback = true;
+                c.stats.fallback_reason = Some(e.err.to_string());
                 Ok(c)
             }
             Err(e) => Err(e.err),

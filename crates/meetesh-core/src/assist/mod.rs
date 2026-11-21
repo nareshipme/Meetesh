@@ -73,6 +73,8 @@ pub struct GenStats {
     pub on_gpu: bool,
     /// True when the GPU failed and this request was transparently redone on the CPU.
     pub cpu_fallback: bool,
+    /// Why the GPU failed, when `cpu_fallback` is set (for diagnostics; never contains user text).
+    pub fallback_reason: Option<String>,
 }
 
 #[derive(Debug, Clone)]
