@@ -9,6 +9,7 @@
  *   ?mock=partial    live-assist download was paused at 42% earlier
  *   ?mock=loading    models installed; live assist stays stuck at "Loading 42%"
  *   ?mock=loadfail   live assist fails to load until you press Retry
+ *   ?mock=gpufail    live assist loads, but the GPU failed so the CPU is used
  *   ?mock=dlfail     the first live-assist download fails at 40% (Retry works)
  *
  * Never bundled into production builds: main.tsx imports it only when `import.meta.env.DEV`.
@@ -137,7 +138,7 @@ export function installMock(variant: string) {
       if (p >= 1) {
         clearInterval(t);
         publish(id, "warming", { progress: 1 });
-        window.setTimeout(() => publish(id, "ready", { backend: "GPU" }), 1200);
+        window.setTimeout(() => publish(id, "ready", { backend: variant === "gpufail" ? "CPU (GPU failed)" : "GPU" }), 1200);
       } else publish(id, "loading", { progress: p });
     }, 250);
   }
@@ -271,6 +272,8 @@ export function installMock(variant: string) {
         case "discard_download":
           partial[a.id] = 0;
           return null;
+        case "log_dir":
+          return "/Users/me/Library/Logs/app.meetesh.desktop";
         case "model_runtime":
           return Object.values(runtime);
         case "retry_model_load":

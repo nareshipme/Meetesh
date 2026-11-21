@@ -2221,7 +2221,6 @@ name = "meetesh"
 version = "0.1.0"
 dependencies = [
  "cpal",
- "llama-cpp-2",
  "log",
  "meetesh-core",
  "serde",
@@ -2236,6 +2235,7 @@ version = "0.1.0"
 dependencies = [
  "hound",
  "llama-cpp-2",
+ "log",
  "minijinja",
  "minijinja-contrib",
  "rusqlite",
@@ -2243,6 +2243,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.1",
  "thiserror 1.0.69",
+ "tracing-core",
  "ureq",
  "whisper-rs",
 ]

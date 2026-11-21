@@ -18,6 +18,7 @@ export function useModels(notify: Notify) {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [downloads, setDownloads] = useState<Record<string, Download>>({});
   const [runtime, setRuntime] = useState<Record<string, ModelLoadEvent>>({});
+  const [logDir, setLogDir] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     api
@@ -28,6 +29,7 @@ export function useModels(notify: Notify) {
 
   useEffect(() => {
     refresh();
+    api.logDir().then(setLogDir).catch(() => {});
     api
       .modelRuntime()
       .then((list) => setRuntime(Object.fromEntries(list.map((e) => [e.id, e]))))
@@ -82,6 +84,7 @@ export function useModels(notify: Notify) {
     models,
     downloads,
     runtime,
+    logDir,
     activeDownloadId,
     startDownload,
     discard,

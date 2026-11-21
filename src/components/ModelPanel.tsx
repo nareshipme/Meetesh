@@ -106,7 +106,12 @@ function Row({ m, ms }: { m: ModelInfo; ms: ModelsState }) {
     );
   } else if (rt?.state === "failed") {
     dot = "dot-bad";
-    status = <small className="error-text">Could not load: {rt.error}</small>;
+    status = (
+      <>
+        <small className="error-text">Could not load: {rt.error}</small>
+        {ms.logDir && <small className="muted">Details are in the log: {ms.logDir}</small>}
+      </>
+    );
     controls = (
       <button className="btn btn-sm btn-primary" onClick={() => api.retryModelLoad(m.id)}>
         Retry
@@ -114,10 +119,18 @@ function Row({ m, ms }: { m: ModelInfo; ms: ModelsState }) {
     );
   } else if (rt?.state === "ready") {
     dot = "dot-ok";
+    const gpuFailed = rt.backend?.includes("GPU failed");
     status = (
-      <small className="muted">
-        {ROLE_LABEL[m.role]} · ready{rt.backend ? ` · ${rt.backend}` : ""}
-      </small>
+      <>
+        <small className={gpuFailed ? "warn" : "muted"}>
+          {ROLE_LABEL[m.role]} · ready{rt.backend ? ` · ${rt.backend}` : ""}
+        </small>
+        {gpuFailed && (
+          <small className="muted">
+            The GPU could not run this model, so the CPU is used. The reason is in the log{ms.logDir ? `: ${ms.logDir}` : ""}
+          </small>
+        )}
+      </>
     );
   } else {
     dot = "dot-busy";

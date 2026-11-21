@@ -9,6 +9,8 @@ pub mod prompt;
 #[cfg(feature = "llm")]
 pub mod jinja;
 #[cfg(feature = "llm")]
+pub mod logging;
+#[cfg(feature = "llm")]
 pub mod llama;
 
 use std::sync::atomic::AtomicBool;
