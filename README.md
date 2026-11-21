@@ -1,21 +1,38 @@
 # Meetesh
 
-**A private, local-first AI meeting assistant.** Record a meeting, get a transcript as you go, and (soon) quiet hints during the conversation. All on your own machine, with no account and no cloud.
+**A private, local-first AI meeting assistant.** Record a meeting, get a live transcript, and ask for a quiet hint during the conversation. All on your own machine, with no account and no cloud.
 
 [![CI](https://github.com/nareshipme/Meetesh/actions/workflows/ci.yml/badge.svg)](https://github.com/nareshipme/Meetesh/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-> **Status: early, pre-alpha.** The core recording and transcription loop works, but it has only been tested on Linux with synthetic audio. Expect rough edges. Contributions and bug reports are very welcome.
+> **Status: early, pre-alpha.** Recording, live transcription and live assist work. The app has been opened and used by hand on macOS and Windows, and the maintainer found the generated hints good enough for a first version. CI builds and tests it on Linux, macOS and Windows. Expect rough edges (see [Known issues](#known-issues-and-planned-work)). Contributions and bug reports are very welcome.
 
 The name comes from *ishara* (इशारा), Hindi/Urdu for a quiet hint or signal, like a glance across the table.
 
 ## Why Meetesh
 
 - **Private by design.** Audio and transcripts stay on your device. After the one-time model download, the app works fully offline. Nothing is uploaded.
-- **Local models.** Speech recognition runs on-device with [whisper.cpp](https://github.com/ggml-org/whisper.cpp). No API keys needed.
+- **Local models.** Speech recognition ([whisper.cpp](https://github.com/ggml-org/whisper.cpp)) and live hints ([llama.cpp](https://github.com/ggml-org/llama.cpp) with Gemma 4 E2B) run on-device. No API keys needed.
 - **Light and native.** Built with [Tauri](https://tauri.app) and Rust, not Electron.
 - **Swappable models.** Models are listed in a manifest, not hard-coded, so improving or replacing one is a data change.
 - **Open source (MIT).** Read it, fork it, improve it.
+
+## Screenshots
+
+These show the interface running against the built-in sample-data backend (see [CONTRIBUTING.md](CONTRIBUTING.md)), so the transcript text is sample text, not a real recording.
+
+![A meeting with its transcript and a hint from the on-device model](docs/screenshots/meeting-hint.png)
+*A meeting with meeting goals, the transcript, and a hint streamed from the on-device model.*
+
+![Recording with live text and a level meter](docs/screenshots/recording-live.png)
+*Recording: live text appears a few seconds behind speech.*
+
+![Models loading in the background at startup](docs/screenshots/models-loading.png)
+*Models load in the background at startup, with progress.*
+
+<img src="docs/screenshots/narrow-dark.png" alt="The same screen at phone width in dark mode" width="320">
+
+*A narrow window in dark mode: one pane at a time.*
 
 ## What works today
 
@@ -25,7 +42,11 @@ The name comes from *ishara* (इशारा), Hindi/Urdu for a quiet hint or s
 | Recover interrupted recordings on next launch | Working |
 | Local transcription of a finished recording (Whisper) with timestamps | Working |
 | Live transcription while recording (text a few seconds behind speech) | Working |
-| Manifest-driven model download with resume, progress, cancel and checksum | Working |
+| Model downloads you can pause, resume, retry or discard, with progress and a SHA-256 check (hashed while downloading, so there is no wait at 100%) | Working |
+| Models load in the background at startup, with a progress bar (real percentage for the live-assist model) and a warm-up, so the first hint is not slow | Working |
+| Live assist: ask for a short hint from the last few minutes (button or Ctrl/Cmd+Shift+H), written by an on-device model (Gemma 4 E2B), streamed into the window and labelled GPU or CPU | Working (manual trigger) |
+| If the GPU cannot run the model, hints automatically fall back to the CPU | Working, but untested on a GPU that fails (simulated in tests) |
+| Optional meeting goals that keep hints on topic | Working |
 | Meetings list, rename, delete (audio is deleted with the meeting), WAV export | Working |
 | Responsive, dark-mode-aware UI | Working |
 
@@ -33,19 +54,50 @@ The name comes from *ishara* (इशारा), Hindi/Urdu for a quiet hint or s
 
 | | Planned |
 |---|---|
-| Next | **Local live assist**: short hints during the meeting from a small on-device LLM (no Ollama needed, model downloaded on demand) |
+| Next | **Automatic hint triggers** (a question is asked, a long pause), a global hotkey, and a hint overlay that floats over other apps |
 | Then | AI summaries (local via Ollama, or Claude with your own key), search, Markdown export |
 | Then | System-audio capture so other participants are transcribed (per OS: WASAPI loopback, ScreenCaptureKit, PipeWire/PulseAudio) |
 | Then | Settings and onboarding, signed installers and auto-update |
 | Later | Mobile companion app, speaker labels, audio-file import |
 
+## Known issues and planned work
+
+Tracked as GitHub issues:
+
+| Issue | Kind |
+|---|---|
+| [#3 GPU is not used for model inference](https://github.com/nareshipme/Meetesh/issues/3) | Bug |
+| [#4 Missing words in the live transcript: improve audio before transcription](https://github.com/nareshipme/Meetesh/issues/4) | Improvement |
+| [#5 Live transcription lags while a hint is being generated](https://github.com/nareshipme/Meetesh/issues/5) | Bug |
+| [#6 One-click new recording](https://github.com/nareshipme/Meetesh/issues/6) | Improvement |
+| [#7 Auto-generate the meeting title with the local model](https://github.com/nareshipme/Meetesh/issues/7) | Feature |
+| [#8 Decide: should users be able to choose their models?](https://github.com/nareshipme/Meetesh/issues/8) | Design question |
+
 ## Limitations
 
+- Hints are requested manually for now.
+- The live-assist model is a 3.1 GB download and, once downloaded, is loaded into memory at every start (about 4 GB). A per-user switch to load it only on demand is planned.
+- Models may run on the CPU even when a GPU is present ([#3](https://github.com/nareshipme/Meetesh/issues/3)). On a CPU-only 4-core Linux machine a hint takes about 6 s.
+- While a hint is generated, live transcription can lag ([#5](https://github.com/nareshipme/Meetesh/issues/5)).
+- Some words can be missing from the live transcript ([#4](https://github.com/nareshipme/Meetesh/issues/4)).
 - Microphone only. It cannot yet capture the other side of a call.
-- English-only speech models are bundled in the manifest for now.
+- English-only speech models are in the manifest for now.
 - One recording per meeting.
 - Whisper can mishear words, especially with noise or accents. The transcript is editable data, not ground truth.
-- Tested only on Linux so far. Windows and macOS builds are expected to work but are unverified.
+
+## Troubleshooting
+
+**"llama decode failed" when asking for a hint.** The GPU could not run the model (this was seen with Metal on macOS). Meetesh now retries on the CPU automatically and labels the hint "CPU (fallback)". If the live-assist row in the sidebar says **"CPU (GPU failed)"**, the GPU path failed while the model warmed up at startup, and the reason is written to the log. To help us find the cause, run the app from a terminal with llama.cpp's own logs switched on and send us the lines around the error, plus your Mac model, chip, macOS version and memory:
+
+```bash
+MEETESH_LLAMA_LOGS=1 npm run tauri dev
+```
+
+**A model download is stuck or failed.** Use Pause, Resume, Retry or Discard in the model panel. A paused or failed download keeps what it already has, so Resume continues from there.
+
+**A model fails to load ("Could not load").** Press Retry in the model panel. If it keeps failing, there may not be enough free memory (the assist model needs about 4 GB).
+
+**Where is my data?** The database, recordings and models live in the app data folder (see [TESTING.md](TESTING.md)). Deleting a meeting deletes its audio.
 
 ## Quick start
 
@@ -58,8 +110,8 @@ npm install
 npm run tauri dev
 ```
 
-The first build takes several minutes. Then in the app:
-1. Download the speech model from the sidebar (about 148 MB, once).
+The first build takes several minutes: Whisper and llama.cpp compile from source, and dependencies are built optimized even in dev builds (so hashing a 3 GB model is fast). Then in the app:
+1. Download the speech model from the sidebar (about 148 MB, once). The optional live-assist model is 3.1 GB. Downloaded models load in the background at every start; the bar at the top shows progress.
 2. Create a meeting and click **Record**. Your OS may ask for microphone permission.
 3. Talk. Live text appears as you speak. Click **Stop** when done.
 
@@ -114,4 +166,4 @@ Meetesh does not send audio or transcripts anywhere. The only network access is 
 
 [MIT](LICENSE) © Meetesh contributors.
 
-Speech recognition uses [whisper.cpp](https://github.com/ggml-org/whisper.cpp) (MIT) and OpenAI Whisper model weights (MIT), downloaded on demand. Built with [Tauri](https://tauri.app), [cpal](https://github.com/RustAudio/cpal) and [rusqlite](https://github.com/rusqlite/rusqlite). Inspired by Meetily, the open-source meeting assistant.
+Speech recognition uses [whisper.cpp](https://github.com/ggml-org/whisper.cpp) (MIT) and OpenAI Whisper model weights (MIT). Live assist uses [llama.cpp](https://github.com/ggml-org/llama.cpp) (MIT) and Google's Gemma 4 E2B (Apache-2.0, GGUF conversion by Unsloth). Models are downloaded on demand. Built with [Tauri](https://tauri.app), [cpal](https://github.com/RustAudio/cpal) and [rusqlite](https://github.com/rusqlite/rusqlite). Inspired by Meetily, the open-source meeting assistant.

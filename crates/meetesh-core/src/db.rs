@@ -42,6 +42,8 @@ const MIGRATIONS: &[&str] = &[
       WHERE length(title) = 18
         AND title GLOB 'Meeting [0-9]*'
         AND CAST(substr(title, 9) AS INTEGER) = created_at;",
+    // 5: optional goals/agenda the user types before a meeting, used as context for live hints
+    "ALTER TABLE meetings ADD COLUMN agenda TEXT NOT NULL DEFAULT '';",
 ];
 
 /// `recording`: audio is being captured. `stopped`: finished normally.
@@ -52,7 +54,7 @@ pub mod status {
     pub const RECOVERED: &str = "recovered";
 }
 
-const COLS: &str = "id, title, created_at, summary, status, duration_ms, audio_dir, transcript_model";
+const COLS: &str = "id, title, created_at, summary, status, duration_ms, audio_dir, transcript_model, agenda";
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct Meeting {
@@ -65,6 +67,8 @@ pub struct Meeting {
     pub audio_dir: String,
     /// Manifest id of the model that produced the transcript ("" if none yet).
     pub transcript_model: String,
+    /// Goals or agenda typed by the user; context for live hints.
+    pub agenda: String,
 }
 
 pub struct Db {
@@ -198,6 +202,14 @@ impl Db {
     }
 
     /// Deletes the meeting and its audio files (NFR-02).
+    pub fn set_agenda(&self, id: i64, agenda: &str) -> Result<Meeting> {
+        let n = self.conn.execute("UPDATE meetings SET agenda = ?1 WHERE id = ?2", params![agenda, id])?;
+        if n == 0 {
+            return Err(Error::NotFound(id));
+        }
+        self.get_meeting(id)
+    }
+
     pub fn delete_meeting(&self, id: i64) -> Result<()> {
         let m = self.get_meeting(id)?;
         self.conn.execute("DELETE FROM meetings WHERE id = ?1", params![id])?;
@@ -277,6 +289,7 @@ fn row_to_meeting(r: &rusqlite::Row<'_>) -> rusqlite::Result<Meeting> {
         duration_ms: r.get(5)?,
         audio_dir: r.get(6)?,
         transcript_model: r.get(7)?,
+        agenda: r.get(8)?,
     })
 }
 
@@ -439,5 +452,14 @@ mod tests {
         assert_eq!(db.get_transcript(m.id).unwrap().len(), 2);
         db.delete_meeting(m.id).unwrap();
         assert!(db.get_transcript(m.id).unwrap().is_empty());
+    }
+
+    #[test]
+    fn agenda_roundtrip_and_old_rows_default_to_empty() {
+        let db = Db::open_in_memory().unwrap();
+        let m = db.create_meeting(Some("A")).unwrap();
+        assert_eq!(m.agenda, "");
+        assert_eq!(db.set_agenda(m.id, "Decide the launch date").unwrap().agenda, "Decide the launch date");
+        assert!(matches!(db.set_agenda(999, "x"), Err(Error::NotFound(999))));
     }
 }

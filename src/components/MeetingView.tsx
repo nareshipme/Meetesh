@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { api, Meeting } from "../api";
+import type { ModelLoadEvent } from "../api";
 import type { Notify } from "../hooks/useToasts";
 import { errorText, fmtDuration, fmtWhen } from "../lib/format";
+import AgendaField from "./AgendaField";
 import Recorder from "./Recorder";
 import Transcript from "./Transcript";
 
@@ -9,13 +11,15 @@ interface Props {
   meeting: Meeting;
   recording: boolean;
   modelReady: boolean;
+  assistReady: boolean;
+  assistLoad: ModelLoadEvent | undefined;
   notify: Notify;
   onChange: () => void;
   onBack: () => void;
   onDeleted: () => void;
 }
 
-export default function MeetingView({ meeting, recording, modelReady, notify, onChange, onBack, onDeleted }: Props) {
+export default function MeetingView({ meeting, recording, modelReady, assistReady, assistLoad, notify, onChange, onBack, onDeleted }: Props) {
   const [title, setTitle] = useState(meeting.title);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
@@ -115,7 +119,17 @@ export default function MeetingView({ meeting, recording, modelReady, notify, on
         </div>
       </div>
 
-      <Transcript meeting={meeting} modelReady={modelReady} recording={recording} notify={notify} onChange={onChange} />
+      <AgendaField meeting={meeting} notify={notify} onChange={onChange} />
+
+      <Transcript
+        meeting={meeting}
+        modelReady={modelReady}
+        assistReady={assistReady}
+        assistLoad={assistLoad}
+        recording={recording}
+        notify={notify}
+        onChange={onChange}
+      />
     </div>
   );
 }

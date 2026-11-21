@@ -1,5 +1,5 @@
 import type { Meeting } from "../api";
-import type { Notify } from "../hooks/useToasts";
+import type { ModelsState } from "../hooks/useModels";
 import { fmtDuration, fmtWhen } from "../lib/format";
 import ModelPanel from "./ModelPanel";
 
@@ -8,10 +8,9 @@ interface Props {
   selectedId: number | null;
   recordingId: number | null;
   transcribingId: number | null;
-  notify: Notify;
+  models: ModelsState;
   onSelect: (id: number) => void;
   onNew: () => void;
-  onRefresh: () => void;
   hidden: boolean; // on narrow screens only one pane shows at a time
 }
 
@@ -22,7 +21,7 @@ function statusChip(m: Meeting, recordingId: number | null, transcribingId: numb
   return null;
 }
 
-export default function Sidebar({ meetings, selectedId, recordingId, transcribingId, notify, onSelect, onNew, onRefresh, hidden }: Props) {
+export default function Sidebar({ meetings, selectedId, recordingId, transcribingId, models, onSelect, onNew, hidden }: Props) {
   return (
     <aside className={hidden ? "sidebar hide-on-mobile" : "sidebar"}>
       <div className="sidebar-top">
@@ -51,7 +50,7 @@ export default function Sidebar({ meetings, selectedId, recordingId, transcribin
         ))}
       </nav>
 
-      <ModelPanel notify={notify} onChange={onRefresh} />
+      <ModelPanel ms={models} />
     </aside>
   );
 }

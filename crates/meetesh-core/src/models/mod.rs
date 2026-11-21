@@ -110,6 +110,9 @@ mod tests {
         let m = Manifest::bundled();
         assert_eq!(m.default_for(Profile::Desktop, Role::Asr).unwrap().id, "whisper-base.en");
         assert_eq!(m.default_for(Profile::Mobile, Role::Asr).unwrap().id, "whisper-tiny.en");
+        assert_eq!(m.default_for(Profile::Desktop, Role::Assist).unwrap().id, "gemma-4-e2b-it");
+        // no assist model is configured for mobile yet: the feature is simply unavailable there
+        assert!(m.default_for(Profile::Mobile, Role::Assist).is_none());
         assert!(m.by_role(Role::Asr).count() >= 2);
     }
 
@@ -123,6 +126,8 @@ mod tests {
 
     #[test]
     fn rejects_bad_manifests() {
+        // a default whose role does not match
+        assert!(Manifest::parse(&mutated(|v| v["defaults"]["desktop"]["assist"] = "whisper-base.en".into())).is_err());
         // sanity: the unmodified manifest is accepted
         assert!(Manifest::parse(&mutated(|_| {})).is_ok());
         // default points at an unknown model

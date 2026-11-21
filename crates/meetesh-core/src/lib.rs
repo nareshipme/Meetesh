@@ -4,6 +4,7 @@
 //! Platform specifics live behind traits in the shell crates.
 
 pub mod asr;
+pub mod assist;
 pub mod audio;
 pub mod db;
 pub mod error;

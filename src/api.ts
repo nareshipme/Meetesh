@@ -7,6 +7,8 @@ export interface Meeting {
   created_at: number; // unix seconds
   summary: string;
   transcript_model: string;
+  /** Goals typed by the user; context for live hints. */
+  agenda: string;
   status: "stopped" | "recording" | "recovered";
   duration_ms: number;
   audio_dir: string;
@@ -25,19 +27,39 @@ export interface TranscriptSegment {
 
 export interface ModelInfo {
   id: string;
+  /** "asr" = speech recognition, "assist" = live hints */
+  role: "asr" | "assist";
   name: string;
   description: string;
   size_bytes: number;
   license: string;
   installed: boolean;
+  /** Bytes on disk for a paused or failed download. */
+  partial_bytes: number;
   is_default: boolean;
 }
 
+export type DownloadPhase = "downloading" | "verifying" | "paused" | "failed" | "done";
+
 export interface DownloadEvent {
   id: string;
+  phase: DownloadPhase;
   downloaded: number;
   total: number;
-  done: boolean;
+  error: string | null;
+}
+
+export type LoadState = "idle" | "loading" | "warming" | "ready" | "failed";
+
+/** Where an installed model is on its way into memory. */
+export interface ModelLoadEvent {
+  id: string;
+  role: "asr" | "assist";
+  state: LoadState;
+  /** 0..1 when the loader reports real progress; null = indeterminate. */
+  progress: number | null;
+  /** "GPU", "CPU", or "CPU (GPU failed)" when the GPU could not run the model. */
+  backend: string | null;
   error: string | null;
 }
 
@@ -59,6 +81,28 @@ export interface LiveDoneEvent {
   full_pass_started: boolean;
 }
 
+export interface HintPieceEvent {
+  meeting_id: number;
+  hint_id: number;
+  /** Everything generated so far (raw). */
+  text: string;
+}
+
+export interface HintDoneEvent {
+  meeting_id: number;
+  hint_id: number;
+  /** Cleaned hint; null when the model had nothing useful to say. */
+  text: string | null;
+  cancelled: boolean;
+  error: string | null;
+  first_token_ms: number;
+  total_ms: number;
+  tokens: number;
+  on_gpu: boolean;
+  /** The GPU failed and the CPU took over for this hint. */
+  cpu_fallback: boolean;
+}
+
 // Thin typed wrapper over the Rust commands. Keep all invoke() calls here so the
 // UI never depends on Tauri directly (easier to mock in tests, and for mobile).
 export const api = {
@@ -76,6 +120,10 @@ export const api = {
   downloadModel: (id: string) => invoke<void>("download_model", { id }),
   cancelDownload: () => invoke<void>("cancel_download"),
   deleteModel: (id: string) => invoke<void>("delete_model", { id }),
+  discardDownload: (id: string) => invoke<void>("discard_download", { id }),
+  modelRuntime: () => invoke<ModelLoadEvent[]>("model_runtime"),
+  retryModelLoad: (id: string) => invoke<void>("retry_model_load", { id }),
+  onModelLoad: (cb: (e: ModelLoadEvent) => void) => listen<ModelLoadEvent>("model-load", (e) => cb(e.payload)),
   getTranscript: (id: number) => invoke<TranscriptSegment[]>("get_transcript", { id }),
   transcribeMeeting: (id: number) => invoke<void>("transcribe_meeting", { id }),
   cancelTranscription: () => invoke<void>("cancel_transcription"),
@@ -86,5 +134,12 @@ export const api = {
   onLiveSegments: (cb: (e: LiveSegmentsEvent) => void) =>
     listen<LiveSegmentsEvent>("live-segments", (e) => cb(e.payload)),
   onLiveDone: (cb: (e: LiveDoneEvent) => void) => listen<LiveDoneEvent>("live-done", (e) => cb(e.payload)),
+  setAgenda: (id: number, agenda: string) => invoke<Meeting>("set_agenda", { id, agenda }),
+  requestHint: (meetingId: number) => invoke<number>("request_hint", { meetingId }),
+  cancelHint: () => invoke<void>("cancel_hint"),
+  assistReady: () => invoke<boolean>("assist_ready"),
+  activeHint: () => invoke<number | null>("active_hint"),
+  onHintPiece: (cb: (e: HintPieceEvent) => void) => listen<HintPieceEvent>("hint-piece", (e) => cb(e.payload)),
+  onHintDone: (cb: (e: HintDoneEvent) => void) => listen<HintDoneEvent>("hint-done", (e) => cb(e.payload)),
   onLevel: (cb: (level: number) => void) => listen<number>("recording-level", (e) => cb(e.payload)),
 };

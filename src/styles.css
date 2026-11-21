@@ -157,3 +157,32 @@ progress { flex: 1; min-width: 100px; max-width: 320px; height: 8px; accent-colo
   .main { padding: 12px 14px; }
   .title { font-size: 20px; }
 }
+
+/* ---------- live assist ---------- */
+.btn-hint { color: var(--accent); border-color: var(--accent); }
+.hint { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin: 0 0 10px; padding: 10px 12px; border-radius: var(--radius); border: 1px solid var(--accent); background: var(--accent-soft); }
+.hint-error { border-color: var(--danger); background: var(--danger-soft); }
+.hint-none { border-color: var(--line); background: var(--panel); }
+.hint-body { display: flex; gap: 10px; min-width: 0; }
+.hint-icon { color: var(--accent); font-size: 16px; line-height: 1.4; }
+.hint-text { font-size: 15px; line-height: 1.45; word-break: break-word; }
+.hint-side { display: flex; align-items: center; gap: 8px; flex: none; }
+.hint-close { font: inherit; font-size: 20px; line-height: 1; background: none; border: 0; color: var(--muted); cursor: pointer; padding: 0 4px; }
+.error-text { color: var(--danger); }
+.caret { display: inline-block; width: 7px; height: 1em; margin-left: 2px; vertical-align: text-bottom; background: var(--accent); animation: pulse 1s steps(2) infinite; }
+.agenda { margin: 0 0 12px; font-size: 13px; }
+.agenda summary { cursor: pointer; color: var(--muted); user-select: none; }
+.agenda textarea { width: 100%; margin-top: 6px; font: inherit; font-size: 14px; padding: 8px 10px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--bg); color: var(--fg); resize: vertical; }
+.model-panel { gap: 14px; }
+.model-row { display: flex; flex-direction: column; gap: 8px; }
+
+/* ---------- model rows, loading ---------- */
+.model-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+.model-info progress { flex: none; max-width: none; width: 100%; height: 8px; }
+.model-controls { padding-left: 19px; }
+.dot-busy { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+.dot-bad { background: var(--danger); }
+.loading-banner { display: flex; flex-direction: column; gap: 6px; margin: -6px 0 14px; padding: 10px 12px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--panel); }
+.loading-lines { display: flex; flex-direction: column; gap: 8px; }
+.loading-line { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, 40%); align-items: center; gap: 12px; font-size: 13px; }
+.loading-line progress { max-width: none; width: 100%; }

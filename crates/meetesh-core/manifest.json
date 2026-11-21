@@ -26,10 +26,28 @@
       "license": "MIT (OpenAI Whisper weights, whisper.cpp ggml conversion)",
       "language": "en",
       "min_ram_mb": 1500
+    },
+    {
+      "id": "gemma-4-e2b-it",
+      "role": "assist",
+      "name": "Gemma 4 E2B (live assist)",
+      "description": "Small on-device language model for live hints. Optional; used only while recording.",
+      "file_name": "gemma-4-E2B-it-Q4_K_M.gguf",
+      "url": "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_M.gguf",
+      "sha256": "740185b21d22ceb83a11c3aa62ad5842ef32c70f6096d756bbee85a1e4ec34b8",
+      "size_bytes": 3106738272,
+      "license": "Apache-2.0 (Google Gemma 4, GGUF conversion by Unsloth)",
+      "language": "",
+      "min_ram_mb": 6000
     }
   ],
   "defaults": {
-    "desktop": { "asr": "whisper-base.en" },
-    "mobile": { "asr": "whisper-tiny.en" }
+    "desktop": {
+      "asr": "whisper-base.en",
+      "assist": "gemma-4-e2b-it"
+    },
+    "mobile": {
+      "asr": "whisper-tiny.en"
+    }
   }
 }

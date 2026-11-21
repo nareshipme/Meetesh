@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch: # also lets you run the heavy real-model job below by hand
 
 jobs:
   test:
@@ -51,3 +52,22 @@ jobs:
           export CC_aarch64_linux_android="$NDK_BIN/aarch64-linux-android24-clang"
           export AR_aarch64_linux_android="$NDK_BIN/llvm-ar"
           cargo check -p meetesh-core --target aarch64-linux-android
+
+  # Downloads the live-assist model (3.1 GB), checks its checksum, and runs the real-model tests,
+  # including Whisper and llama.cpp together in one process. Manual only: too heavy for every push.
+  assist-model:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Download models
+        run: |
+          curl -L --fail -o gemma.gguf https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_M.gguf
+          echo "740185b21d22ceb83a11c3aa62ad5842ef32c70f6096d756bbee85a1e4ec34b8  gemma.gguf" | sha256sum -c -
+          curl -L --fail -o ggml-tiny.en.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin
+      - name: Real-model tests
+        run: |
+          MEETESH_TEST_ASSIST_MODEL=$PWD/gemma.gguf MEETESH_TEST_MODEL=$PWD/ggml-tiny.en.bin \
+            cargo test -p meetesh-core --features "whisper llm" --test llm_hint --test whisper_and_llm -- --nocapture

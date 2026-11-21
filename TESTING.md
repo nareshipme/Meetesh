@@ -36,8 +36,8 @@ MEETESH_TEST_MODEL=/path/to/ggml-tiny.en.bin \
 
 **Speech model** (sidebar)
 - [ ] Shows "Whisper Base (English)" with **Download** and the size (about 148 MB).
-- [ ] Click Download: the progress bar moves. Click **Cancel** part-way, then Download again: it resumes (check that it does not restart from 0).
-- [ ] When finished it says "Ready, runs on this device." The file is in the app data folder under `models/`.
+- [ ] Click Download: the progress bar moves. Click **Pause** part-way, then **Resume**: it continues (check that it does not restart from 0). More cases are under "Model downloads" below.
+- [ ] When finished it says "ready" (with CPU). The file is in the app data folder under `models/`.
 - [ ] Turn off your network now. Everything below must still work offline.
 
 **Recording**
@@ -53,6 +53,29 @@ MEETESH_TEST_MODEL=/path/to/ggml-tiny.en.bin \
 - [ ] Speak several sentences with pauses: segments appear in order with increasing timestamps.
 - [ ] Talk continuously for 10+ seconds without pausing: text still appears (it is cut about every 6 seconds).
 - [ ] Stay silent for 10 seconds: nothing is invented (no "thank you", no repeated phrases).
+
+**Model downloads** (sidebar, bottom left)
+- [ ] The sidebar lists two models (speech, live assist) with their sizes. Start the live-assist download (3.1 GB). The bar and "Downloading N% · x GB of y GB" move.
+- [ ] Click **Pause**: it stops at once and says "Paused at N%". Click **Resume**: it continues from that point and does not start over.
+- [ ] Quit the app while paused or mid-download and reopen it: the row shows "Paused at N%" with Resume and Discard.
+- [ ] At 100% it shows "Verifying the download…" for a few seconds at most (not minutes), then the model starts loading by itself.
+- [ ] Turn off the network mid-download: the row shows "Download failed at N%" with **Retry**. Turn the network on and Retry: it continues from where it stopped.
+- [ ] **Discard** removes the partial download.
+
+**Model loading** (automatic at start)
+- [ ] Quit and reopen the app with both models installed. A bar at the top shows "Loading Gemma 4 E2B · N%" (a real percentage), then "Warming up", and disappears. The sidebar rows go from "Loading into memory N%" to "ready · GPU" (or "ready · CPU").
+- [ ] While it is loading you can already create meetings and record. The **✦ Hint** button is greyed out with a tooltip until the model is ready.
+- [ ] Right after a download finishes, the model loads without any click.
+- [ ] Note how long loading and warm-up take, and which backend the row reports: "GPU", "CPU", or "CPU (GPU failed)". The last means the GPU path failed at startup; please send the log line "GPU failed while warming up ... (reason)".
+
+**Live assist** (needs the live-assist model)
+- [ ] While recording (or on any meeting that has a transcript), click **✦ Hint** or press Ctrl/Cmd+Shift+H. The first hint is as quick as the later ones, because the model is already loaded. Text streams into a blue panel above the transcript.
+- [ ] The hint is short (one or two sentences), relevant to what was just said, and shows how long it took and "GPU" or "CPU". Dismiss it with ×.
+- [ ] If the GPU fails, the hint should still appear, labelled "CPU (fallback)". If you see an error such as "llama decode failed", please send the details (see Troubleshooting in the README).
+- [ ] **Stop** while it is writing cancels it cleanly. Asking again right away works.
+- [ ] Open "Meeting goals", type a goal, click elsewhere, and ask for a hint: it should take the goal into account. Restart the app and check the goal was saved.
+- [ ] Ask for a hint while live transcription is running. Note whether the live text keeps up (a CPU-only machine may fall behind; that is expected and a gap-filling pass runs after stopping).
+- [ ] Please report the time shown on a hint, your chip, macOS version, and memory use in Activity Monitor.
 
 **Stopping**
 - [ ] Click **Stop**: it returns instantly. The meeting shows "Recorded m:ss".

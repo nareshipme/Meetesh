@@ -2,6 +2,12 @@
 resolver = "2"
 members = ["crates/meetesh-core", "src-tauri"]
 
+# Dependencies (not our own crates) are optimized even in debug builds. Unoptimized, the SHA-256
+# stack hashes at about 25 MB/s, which made checking a 3 GB model look like a hung download in
+# `tauri dev`. Our own crates stay at opt-level 0 for fast rebuilds and debugging.
+[profile.dev.package."*"]
+opt-level = 2
+
 [profile.release]
 lto = true
 codegen-units = 1
