@@ -2,7 +2,9 @@
 
 A private, fully local meeting assistant: records, transcribes, and gives you live hints during the meeting. Nothing leaves your machine.
 
-Status: **Slice 0 (walking skeleton)**. The app opens, talks to Rust, and stores meetings in SQLite. Recording, transcription, live assist and summaries come in the next slices (see the plan in Notion).
+Status: **Slices 0 to 3 done**: microphone recording (crash-safe segments), local transcription with Whisper,
+a manifest-driven model downloader, and live transcription while you record. Live assist hints, summaries,
+search/export, system audio and packaging come next (see the plan in Notion).
 
 ## Layout
 ```
@@ -24,6 +26,16 @@ npm run tauri dev
 ```bash
 cargo test --workspace
 ```
+Tests that run a real speech model are opt-in (they need a downloaded model):
+```bash
+MEETESH_TEST_MODEL=/path/to/ggml-tiny.en.bin \
+  cargo test -p meetesh-core --features whisper --test whisper_fixture --test whisper_live -- --nocapture
+```
+
+## Models
+Models are listed in `crates/meetesh-core/manifest.json` (id, URL, SHA-256, size, license, per-device defaults).
+The app downloads the default speech model on first use, with resume and checksum verification. To change a
+model, edit the manifest; no logic names a model.
 
 ## Build installers
 ```bash

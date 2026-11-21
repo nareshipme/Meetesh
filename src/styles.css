@@ -47,3 +47,4 @@ h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .05em; color: v
 .segments { list-style: none; padding: 0; margin: 8px 0; }
 .segments li { padding: 4px 0; }
 .segments time { color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 8px; }
+.live-badge { color: #dc2626; text-transform: none; letter-spacing: 0; margin-left: 6px; }

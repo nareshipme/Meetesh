@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, Meeting, TranscriptSegment } from "./api";
 
 const stamp = (ms: number) => {
@@ -36,8 +36,19 @@ export default function Transcript({ meeting, modelReady, recording, onError, on
         setProgress(e.progress);
       }
     });
+    // Live transcription: text arrives while the meeting is being recorded.
+    const unLive = api.onLiveSegments((e) => {
+      if (e.meeting_id === meeting.id) setSegments((prev) => [...prev, ...e.segments]);
+    });
+    const unDone = api.onLiveDone((e) => {
+      if (e.meeting_id !== meeting.id) return;
+      load(); // pick up any gap-filling pass result
+      onChange();
+    });
     return () => {
       un.then((f) => f());
+      unLive.then((f) => f());
+      unDone.then((f) => f());
     };
   }, [meeting.id, load, onError, onChange]);
 
@@ -52,10 +63,19 @@ export default function Transcript({ meeting, modelReady, recording, onError, on
   }
 
   const hasAudio = meeting.duration_ms > 0 && !recording;
+  const listRef = useRef<HTMLOListElement>(null);
+  useEffect(() => {
+    if (recording) listRef.current?.lastElementChild?.scrollIntoView({ block: "nearest" });
+  }, [segments, recording]);
 
   return (
     <section>
-      <h2>Transcript</h2>
+      <h2>
+        Transcript {recording && modelReady && <span className="live-badge">● Live</span>}
+      </h2>
+      {recording && !modelReady && (
+        <p className="muted">Download the speech model to see live text while recording.</p>
+      )}
       {progress !== null && (
         <div className="row">
           <progress value={progress} max={1} aria-label="Transcription progress" />
@@ -73,7 +93,7 @@ export default function Transcript({ meeting, modelReady, recording, onError, on
         </div>
       )}
       {segments.length > 0 ? (
-        <ol className="segments">
+        <ol className="segments" ref={listRef}>
           {segments.map((s, i) => (
             <li key={i}>
               <time>{stamp(s.start_ms)}</time> {s.text}
@@ -81,7 +101,8 @@ export default function Transcript({ meeting, modelReady, recording, onError, on
           ))}
         </ol>
       ) : (
-        progress === null && <p className="muted">{hasAudio ? "No transcript yet." : "Record to get a transcript."}</p>
+        progress === null &&
+        !recording && <p className="muted">{hasAudio ? "No transcript yet." : "Record to get a transcript."}</p>
       )}
     </section>
   );

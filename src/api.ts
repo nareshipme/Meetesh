@@ -49,6 +49,16 @@ export interface TranscribeEvent {
   error: string | null;
 }
 
+export interface LiveSegmentsEvent {
+  meeting_id: number;
+  segments: TranscriptSegment[];
+}
+
+export interface LiveDoneEvent {
+  meeting_id: number;
+  full_pass_started: boolean;
+}
+
 // Thin typed wrapper over the Rust commands. Keep all invoke() calls here so the
 // UI never depends on Tauri directly (easier to mock in tests, and for mobile).
 export const api = {
@@ -73,5 +83,8 @@ export const api = {
   onDownload: (cb: (e: DownloadEvent) => void) => listen<DownloadEvent>("model-download", (e) => cb(e.payload)),
   onTranscribe: (cb: (e: TranscribeEvent) => void) =>
     listen<TranscribeEvent>("transcribe-progress", (e) => cb(e.payload)),
+  onLiveSegments: (cb: (e: LiveSegmentsEvent) => void) =>
+    listen<LiveSegmentsEvent>("live-segments", (e) => cb(e.payload)),
+  onLiveDone: (cb: (e: LiveDoneEvent) => void) => listen<LiveDoneEvent>("live-done", (e) => cb(e.payload)),
   onLevel: (cb: (level: number) => void) => listen<number>("recording-level", (e) => cb(e.payload)),
 };

@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+use meetesh_core::asr::live::{live_chunker_config, LiveSettle, LiveTranscriber};
 use meetesh_core::asr::run::transcribe_recording;
 use meetesh_core::asr::whisper::WhisperTranscriber;
 use meetesh_core::audio::sinks::{LevelSink, WavSink};
@@ -24,6 +25,8 @@ struct ActiveRecording {
     meeting_id: i64,
     session: RecordingSession,
     capture: capture::CaptureHandle,
+    /// Present when live transcription was running for this recording.
+    live: Option<Arc<Mutex<LiveSettle>>>,
 }
 
 struct TranscriptionJob {
@@ -70,6 +73,19 @@ struct DownloadEvent {
     total: u64,
     done: bool,
     error: Option<String>,
+}
+
+#[derive(Serialize, Clone)]
+struct LiveSegmentsEvent {
+    meeting_id: i64,
+    segments: Vec<TranscriptSegment>,
+}
+
+#[derive(Serialize, Clone)]
+struct LiveDoneEvent {
+    meeting_id: i64,
+    /// True when the live transcript may have gaps and a full pass was started to fill them.
+    full_pass_started: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -129,19 +145,29 @@ fn start_recording(
     let meeting = state.db.lock().unwrap().begin_recording(meeting_id, &state.recordings_root)?;
 
     let level_app = app.clone();
-    let sinks: Vec<Box<dyn FrameSink>> = vec![
+    let mut sinks: Vec<Box<dyn FrameSink>> = vec![
         Box::new(WavSink::new(&meeting.audio_dir)?),
         Box::new(LevelSink::new(move |l| {
             let _ = level_app.emit("recording-level", l);
         })),
     ];
+
+    // Live transcription, if the speech model is installed. Never required for recording.
+    let live = match state.asr_model() {
+        Ok(entry) if state.models.is_installed(entry) => {
+            let outcome = Arc::new(Mutex::new(LiveSettle::default()));
+            sinks.push(Box::new(live_sink(&app, meeting.id, entry.id.clone(), outcome.clone())));
+            Some(outcome)
+        }
+        _ => None,
+    };
     let session = RecordingSession::start(sinks, 256);
     let factory = session.pusher_factory();
 
     match capture::start_capture(device, move |rate, ch| factory.make(rate, ch)) {
         Ok(capture) => {
             log::info!("recording started for meeting {}", meeting.id);
-            *active = Some(ActiveRecording { meeting_id: meeting.id, session, capture });
+            *active = Some(ActiveRecording { meeting_id: meeting.id, session, capture, live });
             Ok(meeting)
         }
         Err(e) => {
@@ -174,9 +200,20 @@ fn stop_recording(app: AppHandle, state: State<AppState>) -> Result<Meeting> {
     let duration_ms = (report.samples * 1000 / TARGET_RATE as u64) as i64;
     log::info!("recording stopped for meeting {} ({} ms)", rec.meeting_id, duration_ms);
     let meeting = state.db.lock().unwrap().finish_recording(rec.meeting_id, duration_ms)?;
-    // Transcribe automatically when the speech model is installed.
-    if let Err(e) = start_transcription(&app, meeting.id) {
-        log::info!("not transcribing meeting {} automatically: {e}", meeting.id);
+    match rec.live {
+        // Live transcription is finishing in the background; it decides whether a full pass is needed.
+        Some(outcome) => {
+            let settled = outcome.lock().unwrap().recording_stopped();
+            if let Some(report) = settled {
+                finish_live(&app, meeting.id, report);
+            }
+        }
+        // No live transcript (model not installed at start): transcribe now if possible.
+        None => {
+            if let Err(e) = start_transcription(&app, meeting.id) {
+                log::info!("not transcribing meeting {} automatically: {e}", meeting.id);
+            }
+        }
     }
     Ok(meeting)
 }
@@ -194,6 +231,68 @@ fn export_audio(state: State<AppState>, id: i64) -> Result<String> {
     Ok(out.to_string_lossy().into_owned())
 }
 
+
+
+/// Load (or reuse) the speech model. Shared by live and full-recording transcription.
+fn get_transcriber(app: &AppHandle) -> Result<Arc<WhisperTranscriber>> {
+    let st = app.state::<AppState>();
+    let entry = st.asr_model()?.clone();
+    let mut cached = st.transcriber.lock().unwrap();
+    if let Some(t) = cached.as_ref() {
+        if meetesh_core::Transcriber::model_id(t.as_ref()) == entry.id {
+            return Ok(t.clone());
+        }
+    }
+    let lang = if entry.language.is_empty() { None } else { Some(entry.language.as_str()) };
+    let t = Arc::new(WhisperTranscriber::load(&entry.id, &st.models.path(&entry), lang)?);
+    *cached = Some(t.clone());
+    Ok(t)
+}
+
+/// Build the live transcription sink for one recording. Segments are saved as they arrive and
+/// pushed to the UI. Never logs transcript text.
+fn live_sink(app: &AppHandle, meeting_id: i64, model_id: String, outcome: Arc<Mutex<LiveSettle>>) -> LiveTranscriber {
+    let (load_app, seg_app, done_app) = (app.clone(), app.clone(), app.clone());
+    LiveTranscriber::start(
+        live_chunker_config(),
+        8,
+        Box::new(move || Ok(get_transcriber(&load_app)? as Arc<dyn meetesh_core::Transcriber>)),
+        move |segments| {
+            let st = seg_app.state::<AppState>();
+            {
+                let db = st.db.lock().unwrap();
+                for s in &segments {
+                    if let Err(e) = db.append_transcript_segment(meeting_id, &model_id, s) {
+                        log::warn!("could not save live segment: {e}");
+                    }
+                }
+            }
+            let _ = seg_app.emit("live-segments", LiveSegmentsEvent { meeting_id, segments });
+        },
+        move |report| {
+            log::info!(
+                "live transcription for meeting {meeting_id}: {} chunks, {} dropped, {} errors",
+                report.chunks,
+                report.dropped_chunks,
+                report.errors.len()
+            );
+            for e in &report.errors {
+                log::warn!("live transcription error: {e}");
+            }
+            let settled = outcome.lock().unwrap().worker_finished(report);
+            if let Some(report) = settled {
+                finish_live(&done_app, meeting_id, report);
+            }
+        },
+    )
+}
+
+/// Runs once both the recording and the live worker have finished, in either order.
+fn finish_live(app: &AppHandle, meeting_id: i64, report: meetesh_core::asr::live::LiveReport) {
+    // The live transcript has gaps (transcriber fell behind, or the model failed): fill them from the audio.
+    let full_pass_started = report.needs_full_pass() && start_transcription(app, meeting_id).is_ok();
+    let _ = app.emit("live-done", LiveDoneEvent { meeting_id, full_pass_started });
+}
 
 #[tauri::command]
 fn list_models(state: State<AppState>) -> Vec<ModelInfo> {
@@ -313,18 +412,7 @@ fn start_transcription(app: &AppHandle, meeting_id: i64) -> Result<()> {
             let _ = app.emit("transcribe-progress", TranscribeEvent { meeting_id, progress, done, cancelled, error });
         };
         let outcome = (|| -> Result<()> {
-            let transcriber = {
-                let mut cached = st.transcriber.lock().unwrap();
-                match cached.as_ref() {
-                    Some(t) if meetesh_core::Transcriber::model_id(t.as_ref()) == entry.id => t.clone(),
-                    _ => {
-                        let lang = if entry.language.is_empty() { None } else { Some(entry.language.as_str()) };
-                        let t = Arc::new(WhisperTranscriber::load(&entry.id, &st.models.path(&entry), lang)?);
-                        *cached = Some(t.clone());
-                        t
-                    }
-                }
-            };
+            let transcriber = get_transcriber(&app)?;
             let segments = transcribe_recording(
                 std::path::Path::new(&meeting.audio_dir),
                 transcriber.as_ref(),

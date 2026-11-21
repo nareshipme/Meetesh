@@ -5,6 +5,7 @@
 //! from the manifest, never named in logic (NFR-21).
 
 pub mod chunker;
+pub mod live;
 pub mod run;
 #[cfg(feature = "whisper")]
 pub mod whisper;
