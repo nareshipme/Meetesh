@@ -36,6 +36,12 @@ const MIGRATIONS: &[&str] = &[
         text       TEXT    NOT NULL
      );
      CREATE INDEX idx_segments_meeting ON transcript_segments(meeting_id, start_ms);",
+    // 4: auto-generated titles were "Meeting <unix seconds>"; make them readable, in local time
+    "UPDATE meetings
+        SET title = 'Meeting ' || strftime('%Y-%m-%d %H:%M', created_at, 'unixepoch', 'localtime')
+      WHERE length(title) = 18
+        AND title GLOB 'Meeting [0-9]*'
+        AND CAST(substr(title, 9) AS INTEGER) = created_at;",
 ];
 
 /// `recording`: audio is being captured. `stopped`: finished normally.
@@ -107,12 +113,16 @@ impl Db {
         Ok(())
     }
 
-    /// Create a meeting. An empty title gets a placeholder name.
+    /// Create a meeting. An empty title becomes "Meeting YYYY-MM-DD HH:MM" in local time.
     pub fn create_meeting(&self, title: Option<&str>) -> Result<Meeting> {
         let ts = now();
         let title = match title.map(str::trim) {
             Some(t) if !t.is_empty() => t.to_string(),
-            _ => format!("Meeting {ts}"),
+            _ => self.conn.query_row(
+                "SELECT 'Meeting ' || strftime('%Y-%m-%d %H:%M', ?1, 'unixepoch', 'localtime')",
+                params![ts],
+                |r| r.get::<_, String>(0),
+            )?,
         };
         self.conn.execute(
             "INSERT INTO meetings (title, created_at) VALUES (?1, ?2)",
@@ -290,11 +300,42 @@ mod tests {
         assert_eq!(list.iter().map(|m| m.id).collect::<Vec<_>>(), vec![b.id, a.id]);
     }
 
+    fn looks_like_default_title(t: &str) -> bool {
+        // "Meeting 2026-11-21 21:59"
+        let b = t.as_bytes();
+        t.len() == 24
+            && t.starts_with("Meeting ")
+            && b[12] == b'-' && b[15] == b'-' && b[18] == b' ' && b[21] == b':'
+            && t[8..12].chars().all(|c| c.is_ascii_digit())
+    }
+
     #[test]
-    fn empty_title_gets_placeholder() {
+    fn empty_title_gets_a_readable_local_time_placeholder() {
         let db = Db::open_in_memory().unwrap();
-        assert!(db.create_meeting(Some("   ")).unwrap().title.starts_with("Meeting "));
-        assert!(db.create_meeting(None).unwrap().title.starts_with("Meeting "));
+        let a = db.create_meeting(Some("   ")).unwrap().title;
+        let b = db.create_meeting(None).unwrap().title;
+        assert!(looks_like_default_title(&a), "{a}");
+        assert!(looks_like_default_title(&b), "{b}");
+    }
+
+    #[test]
+    fn migration_4_rewrites_only_auto_generated_titles() {
+        // A database at schema v3 containing old-style titles.
+        let conn = Connection::open_in_memory().unwrap();
+        for sql in &MIGRATIONS[..3] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", 3u32).unwrap();
+        let ins = "INSERT INTO meetings (title, created_at) VALUES (?1, ?2)";
+        conn.execute(ins, params!["Meeting 1795278543", 1795278543i64]).unwrap(); // auto-generated
+        conn.execute(ins, params!["Meeting 1795278543", 1700000000i64]).unwrap(); // number does not match created_at
+        conn.execute(ins, params!["Meeting 5", 1795278543i64]).unwrap(); // user title
+        conn.execute(ins, params!["Weekly sync", 1795278543i64]).unwrap();
+        let db = Db::init(conn).unwrap();
+        assert_eq!(db.schema_version().unwrap() as usize, MIGRATIONS.len());
+        let titles: Vec<String> = db.list_meetings().unwrap().into_iter().rev().map(|m| m.title).collect();
+        assert!(looks_like_default_title(&titles[0]), "{}", titles[0]);
+        assert_eq!(&titles[1..], ["Meeting 1795278543", "Meeting 5", "Weekly sync"]);
     }
 
     #[test]

@@ -1,120 +1,72 @@
-import { useCallback, useEffect, useState } from "react";
-import { api, Meeting } from "./api";
-import ModelPanel from "./ModelPanel";
-import Recorder from "./Recorder";
-import Transcript from "./Transcript";
+import { useCallback, useState } from "react";
+import { api } from "./api";
+import MeetingView from "./components/MeetingView";
+import Sidebar from "./components/Sidebar";
+import Toasts from "./components/Toasts";
+import { useMeetings } from "./hooks/useMeetings";
+import { useToasts } from "./hooks/useToasts";
+import { errorText } from "./lib/format";
 
 export default function App() {
-  const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const { toasts, notify, dismiss } = useToasts();
+  const { meetings, recordingId, transcribingId, modelReady, refresh } = useMeetings(notify);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [recordingId, setRecordingId] = useState<number | null>(null);
-  const [modelReady, setModelReady] = useState(false);
-
-  const refresh = useCallback(async () => {
-    try {
-      setMeetings(await api.listMeetings());
-      setRecordingId(await api.activeRecording());
-      setModelReady((await api.listModels()).some((m) => m.is_default && m.installed));
-    } catch (e) {
-      setError(String(e));
-    }
-  }, []);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
 
   const selected = meetings.find((m) => m.id === selectedId) ?? null;
 
-  async function newMeeting() {
+  const newMeeting = useCallback(async () => {
     try {
       const m = await api.createMeeting();
       await refresh();
       setSelectedId(m.id);
     } catch (e) {
-      setError(String(e));
+      notify("error", errorText(e));
     }
-  }
-
-  async function rename(m: Meeting, title: string) {
-    if (title.trim() && title !== m.title) {
-      await api.renameMeeting(m.id, title.trim()).catch((e) => setError(String(e)));
-      refresh();
-    }
-  }
-
-  async function remove(m: Meeting) {
-    if (!window.confirm(`Delete "${m.title}"?`)) return;
-    await api.deleteMeeting(m.id).catch((e) => setError(String(e)));
-    setSelectedId(null);
-    refresh();
-  }
+  }, [refresh, notify]);
 
   return (
     <div className="app">
-      <aside className={selected ? "sidebar hide-on-mobile" : "sidebar"}>
-        <h1>Meetesh</h1>
-        <button className="primary" onClick={newMeeting}>
-          + New meeting
-        </button>
-        <ul className="list">
-          {meetings.map((m) => (
-            <li key={m.id}>
-              <button
-                className={m.id === selectedId ? "item active" : "item"}
-                onClick={() => setSelectedId(m.id)}
-              >
-                {m.id === recordingId ? "● " : ""}
-                {m.title}
-                <small>{new Date(m.created_at * 1000).toLocaleString()}</small>
-              </button>
-            </li>
-          ))}
-        </ul>
-        {meetings.length === 0 && <p className="muted">No meetings yet.</p>}
-        <ModelPanel onChange={refresh} />
-      </aside>
-
+      <Sidebar
+        meetings={meetings}
+        selectedId={selectedId}
+        recordingId={recordingId}
+        transcribingId={transcribingId}
+        notify={notify}
+        onSelect={setSelectedId}
+        onNew={newMeeting}
+        onRefresh={refresh}
+        hidden={selected !== null}
+      />
       <main className={selected ? "main" : "main hide-on-mobile"}>
-        {error && (
-          <p className="error" role="alert">
-            {error} <button onClick={() => setError(null)}>dismiss</button>
-          </p>
-        )}
         {selected ? (
-          <>
-            <button className="back" onClick={() => setSelectedId(null)}>
-              ← Meetings
-            </button>
-            <input
-              key={selected.id}
-              className="title"
-              aria-label="Meeting title"
-              defaultValue={selected.title}
-              onBlur={(e) => rename(selected, e.target.value)}
-            />
-            <Recorder
-              meeting={selected}
-              recording={recordingId === selected.id}
-              onChange={refresh}
-              onError={setError}
-            />
-            <Transcript
-              meeting={selected}
-              modelReady={modelReady}
-              recording={recordingId === selected.id}
-              onError={setError}
-              onChange={refresh}
-            />
-            <button onClick={() => remove(selected)} disabled={recordingId === selected.id}>
-              Delete
-            </button>
-          </>
+          <MeetingView
+            meeting={selected}
+            recording={recordingId === selected.id}
+            modelReady={modelReady}
+            notify={notify}
+            onChange={refresh}
+            onBack={() => setSelectedId(null)}
+            onDeleted={() => {
+              setSelectedId(null);
+              refresh();
+            }}
+          />
         ) : (
-          <p className="muted">Select a meeting or create a new one.</p>
+          <div className="welcome">
+            <h2>Welcome to Meetesh</h2>
+            <p className="muted">Private meeting notes. Everything runs on this device.</p>
+            <ol>
+              {!modelReady && <li>Download the speech model (once) from the panel at the bottom left.</li>}
+              <li>Create a meeting and press Record.</li>
+              <li>Talk. Live text appears as you speak.</li>
+            </ol>
+            <button className="btn btn-primary" onClick={newMeeting}>
+              + New meeting
+            </button>
+          </div>
         )}
       </main>
+      <Toasts toasts={toasts} onDismiss={dismiss} />
     </div>
   );
 }
