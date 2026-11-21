@@ -1,0 +1,10 @@
+[package]
+name = "meetesh-core"
+version = "0.1.0"
+edition = "2021"
+description = "Platform-neutral core for Meetesh: storage, models and logic. No desktop-only dependencies (NFR-22)."
+
+[dependencies]
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+thiserror = "1"

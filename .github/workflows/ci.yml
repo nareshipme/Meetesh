@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Linux system libraries
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev
+      - run: npm ci
+      - run: npm run build
+      - run: cargo test --workspace
+      - run: cargo build -p meetesh
+
+  # NFR-22: the platform-neutral core must keep compiling for mobile targets.
+  # Not yet verified in CI; allowed to fail until the first run shows what is needed.
+  core-mobile:
+    runs-on: macos-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: "aarch64-apple-ios,aarch64-linux-android" }
+      - run: cargo check -p meetesh-core --target aarch64-apple-ios
+      - name: Android (needs the NDK clang for the bundled SQLite)
+        run: |
+          NDK_BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/darwin-x86_64/bin"
+          export CC_aarch64_linux_android="$NDK_BIN/aarch64-linux-android24-clang"
+          export AR_aarch64_linux_android="$NDK_BIN/llvm-ar"
+          cargo check -p meetesh-core --target aarch64-linux-android
