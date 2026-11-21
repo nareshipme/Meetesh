@@ -113,12 +113,27 @@ mod tests {
         assert!(m.by_role(Role::Asr).count() >= 2);
     }
 
+    /// Edit the bundled manifest as JSON, so the test does not depend on whitespace or line endings
+    /// (Windows checks files out with CRLF).
+    fn mutated(f: impl FnOnce(&mut serde_json::Value)) -> String {
+        let mut v: serde_json::Value = serde_json::from_str(include_str!("../../manifest.json")).unwrap();
+        f(&mut v);
+        v.to_string()
+    }
+
     #[test]
     fn rejects_bad_manifests() {
-        let ok = include_str!("../../manifest.json");
-        assert!(Manifest::parse(&ok.replace("whisper-base.en\" }", "nope\" }")).is_err());
-        assert!(Manifest::parse(&ok.replace("a03779c8", "zzzz")).is_err());
-        assert!(Manifest::parse(&ok.replace("ggml-tiny.en.bin\",\n      \"url", "../evil.bin\",\n      \"url")).is_err());
+        // sanity: the unmodified manifest is accepted
+        assert!(Manifest::parse(&mutated(|_| {})).is_ok());
+        // default points at an unknown model
+        assert!(Manifest::parse(&mutated(|v| v["defaults"]["desktop"]["asr"] = "nope".into())).is_err());
+        // malformed checksum
+        assert!(Manifest::parse(&mutated(|v| v["models"][1]["sha256"] = "zzzz".into())).is_err());
+        // path traversal in the file name
+        assert!(Manifest::parse(&mutated(|v| v["models"][0]["file_name"] = "../evil.bin".into())).is_err());
+        // duplicate ids
+        assert!(Manifest::parse(&mutated(|v| v["models"][1]["id"] = v["models"][0]["id"].clone())).is_err());
+        // not JSON
         assert!(Manifest::parse("{").is_err());
     }
 }
