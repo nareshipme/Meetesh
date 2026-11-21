@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, Meeting } from "./api";
+import Recorder from "./Recorder";
 
 export default function App() {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [recordingId, setRecordingId] = useState<number | null>(null);
 
   const refresh = useCallback(async () => {
     try {
       setMeetings(await api.listMeetings());
+      setRecordingId(await api.activeRecording());
     } catch (e) {
       setError(String(e));
     }
@@ -58,6 +61,7 @@ export default function App() {
                 className={m.id === selectedId ? "item active" : "item"}
                 onClick={() => setSelectedId(m.id)}
               >
+                {m.id === recordingId ? "● " : ""}
                 {m.title}
                 <small>{new Date(m.created_at * 1000).toLocaleString()}</small>
               </button>
@@ -85,10 +89,15 @@ export default function App() {
               defaultValue={selected.title}
               onBlur={(e) => rename(selected, e.target.value)}
             />
-            <p className="muted">
-              Recording, transcript, live hints and summary arrive in the next slices.
-            </p>
-            <button onClick={() => remove(selected)}>Delete</button>
+            <Recorder
+              meeting={selected}
+              recording={recordingId === selected.id}
+              onChange={refresh}
+              onError={setError}
+            />
+            <button onClick={() => remove(selected)} disabled={recordingId === selected.id}>
+              Delete
+            </button>
           </>
         ) : (
           <p className="muted">Select a meeting or create a new one.</p>

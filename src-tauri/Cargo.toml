@@ -14,5 +14,6 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-log = "2"
 log = "0.4"
+cpal = "0.15"
 serde = { version = "1", features = ["derive"] }
 meetesh-core = { path = "../crates/meetesh-core" }

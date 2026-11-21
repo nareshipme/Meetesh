@@ -3,6 +3,7 @@
 //! Rule (NFR-22): no windowing, no OS-specific audio, no Tauri here.
 //! Platform specifics live behind traits in the shell crates.
 
+pub mod audio;
 pub mod db;
 pub mod error;
 

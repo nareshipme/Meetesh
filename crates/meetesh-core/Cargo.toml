@@ -8,3 +8,4 @@ description = "Platform-neutral core for Meetesh: storage, models and logic. No 
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 thiserror = "1"
+hound = "3.5"

@@ -30,3 +30,13 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   .hide-on-mobile { display: none; }
   .back { display: inline-block; }
 }
+
+.recorder, .row { display: flex; align-items: center; gap: 12px; margin: 12px 0; flex-wrap: wrap; }
+.recorder-idle { margin: 12px 0; }
+button.rec { background: #dc2626; border-color: #dc2626; color: #fff; }
+button.primary-inline { background: var(--accent); border-color: var(--accent); color: #fff; }
+select { font: inherit; min-height: 44px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--fg); padding: 0 8px; }
+.timer { font-variant-numeric: tabular-nums; font-size: 18px; }
+.meter { flex: 1; min-width: 120px; height: 10px; background: var(--card); border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+.meter-fill { height: 100%; background: #16a34a; transition: width 80ms linear; }
+.consent { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }

@@ -4,6 +4,8 @@ use serde::Serialize;
 pub enum Error {
     #[error("database error: {0}")]
     Db(#[from] rusqlite::Error),
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
     #[error("meeting {0} not found")]
     NotFound(i64),
     #[error("{0}")]
