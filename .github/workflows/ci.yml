@@ -50,7 +50,7 @@ jobs:
       - name: Vulkan SDK pieces
         run: |
           sudo apt-get update
-          sudo apt-get install -y libvulkan-dev glslc
+          sudo apt-get install -y libvulkan-dev glslc spirv-headers
       - run: cargo test -p meetesh-core --features vulkan --lib
       - run: cargo build -p meetesh-core --features vulkan --example gpu_probe
 
