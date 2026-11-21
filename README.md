@@ -78,8 +78,8 @@ mic (cpal) ─> resample to 16 kHz mono ─┬─> segmented WAV on disk   (cras
 
 ```
 crates/meetesh-core/   platform-neutral core: storage, audio pipeline, ASR, model manager (no desktop-only deps)
-src-tauri/             desktop shell: microphone capture and thin Tauri commands over the core
-src/                   React + TypeScript UI (all backend calls go through src/api.ts)
+src-tauri/             desktop shell: microphone capture and thin Tauri commands over the core (commands/, state, live, events)
+src/                   React + TypeScript UI: components/, hooks/, lib/ (all backend calls go through src/api.ts)
 prototype-web/         the original Python/browser prototype, kept for reference
 ```
 
