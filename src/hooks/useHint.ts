@@ -6,7 +6,7 @@ import type { Notify } from "./useToasts";
 export type HintState =
   | { kind: "idle" }
   | { kind: "working"; text: string } // text streams in as the model writes it
-  | { kind: "done"; text: string; ms: number }
+  | { kind: "done"; text: string; ms: number; backend: "GPU" | "CPU"; fellBack: boolean }
   | { kind: "none" } // the model had nothing useful to say
   | { kind: "error"; message: string };
 
@@ -33,7 +33,7 @@ export function useHint(meetingId: number, notify: Notify) {
       currentId.current = null;
       if (e.error) setState({ kind: "error", message: e.error });
       else if (e.cancelled) setState({ kind: "idle" });
-      else if (e.text) setState({ kind: "done", text: e.text, ms: e.total_ms });
+      else if (e.text) setState({ kind: "done", text: e.text, ms: e.total_ms, backend: e.on_gpu ? "GPU" : "CPU", fellBack: e.cpu_fallback });
       else setState({ kind: "none" });
     });
     return () => {

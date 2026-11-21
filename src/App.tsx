@@ -1,15 +1,18 @@
 import { useCallback, useState } from "react";
 import { api } from "./api";
 import MeetingView from "./components/MeetingView";
+import LoadingBanner from "./components/LoadingBanner";
 import Sidebar from "./components/Sidebar";
 import Toasts from "./components/Toasts";
 import { useMeetings } from "./hooks/useMeetings";
+import { useModels } from "./hooks/useModels";
 import { useToasts } from "./hooks/useToasts";
 import { errorText } from "./lib/format";
 
 export default function App() {
   const { toasts, notify, dismiss } = useToasts();
-  const { meetings, recordingId, transcribingId, modelReady, assistReady, refresh } = useMeetings(notify);
+  const { meetings, recordingId, transcribingId, refresh } = useMeetings(notify);
+  const models = useModels(notify);
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
   const selected = meetings.find((m) => m.id === selectedId) ?? null;
@@ -31,19 +34,20 @@ export default function App() {
         selectedId={selectedId}
         recordingId={recordingId}
         transcribingId={transcribingId}
-        notify={notify}
+        models={models}
         onSelect={setSelectedId}
         onNew={newMeeting}
-        onRefresh={refresh}
         hidden={selected !== null}
       />
       <main className={selected ? "main" : "main hide-on-mobile"}>
+        <LoadingBanner ms={models} />
         {selected ? (
           <MeetingView
             meeting={selected}
             recording={recordingId === selected.id}
-            modelReady={modelReady}
-            assistReady={assistReady}
+            modelReady={models.speechInstalled}
+            assistReady={models.assistInstalled}
+            assistLoad={models.assistLoad}
             notify={notify}
             onChange={refresh}
             onBack={() => setSelectedId(null)}
@@ -57,7 +61,7 @@ export default function App() {
             <h2>Welcome to Meetesh</h2>
             <p className="muted">Private meeting notes. Everything runs on this device.</p>
             <ol>
-              {!modelReady && <li>Download the speech model (once) from the panel at the bottom left.</li>}
+              {!models.speechInstalled && <li>Download the speech model (once) from the panel at the bottom left.</li>}
               <li>Create a meeting and press Record.</li>
               <li>Talk. Live text appears as you speak.</li>
             </ol>

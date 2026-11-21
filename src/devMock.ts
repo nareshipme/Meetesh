@@ -6,6 +6,10 @@
  *   ?mock=empty      no meetings
  *   ?mock=nomodel    neither model downloaded
  *   ?mock=noassist   speech model installed, live-assist model not downloaded
+ *   ?mock=partial    live-assist download was paused at 42% earlier
+ *   ?mock=loading    models installed; live assist stays stuck at "Loading 42%"
+ *   ?mock=loadfail   live assist fails to load until you press Retry
+ *   ?mock=dlfail     the first live-assist download fails at 40% (Retry works)
  *
  * Never bundled into production builds: main.tsx imports it only when `import.meta.env.DEV`.
  */
@@ -28,8 +32,15 @@ export function installMock(variant: string) {
   let nextId = 3;
   let recordingId: number | null = null;
   let modelInstalled = variant !== "nomodel";
-  let assistInstalled = variant !== "nomodel" && variant !== "noassist";
+  let assistInstalled = !["nomodel", "noassist", "partial", "dlfail"].includes(variant);
   let hintBusy = false;
+  const ASSIST_ID = "gemma-4-e2b-it";
+  const SIZES: Record<string, number> = { "whisper-base.en": 147_964_211, [ASSIST_ID]: 3_106_738_272 };
+  const partial: Record<string, number> = { "whisper-base.en": 0, [ASSIST_ID]: variant === "partial" ? Math.round(3_106_738_272 * 0.42) : 0 };
+  const runtime: Record<string, any> = {};
+  let dlTimer: number | undefined;
+  let dlFailedOnce = false;
+  let loadFailedOnce = false;
   let timers: number[] = [];
   const transcripts = new Map<number, TranscriptSegment[]>();
 
@@ -94,6 +105,47 @@ export function installMock(variant: string) {
     return m;
   }
 
+  const publish = (id: string, state: string, extra: Record<string, unknown> = {}) => {
+    const role = id === ASSIST_ID ? "assist" : "asr";
+    runtime[id] = { id, role, state, progress: null, backend: null, error: null, ...extra };
+    emit("model-load", runtime[id]);
+  };
+
+  /** Fake loading: real-looking progress for the live-assist model, indeterminate for speech. */
+  function startLoad(id: string) {
+    publish(id, "loading", id === ASSIST_ID ? { progress: 0 } : {});
+    let p = 0;
+    const t = window.setInterval(() => {
+      if (id !== ASSIST_ID) {
+        clearInterval(t);
+        publish(id, "warming");
+        window.setTimeout(() => publish(id, "ready", { backend: "CPU" }), 600);
+        return;
+      }
+      p += 0.07;
+      if (variant === "loading" && p >= 0.42) {
+        clearInterval(t);
+        publish(id, "loading", { progress: 0.42 });
+        return;
+      }
+      if (variant === "loadfail" && !loadFailedOnce && p >= 0.3) {
+        clearInterval(t);
+        loadFailedOnce = true;
+        publish(id, "failed", { error: "llama could not load model: out of memory" });
+        return;
+      }
+      if (p >= 1) {
+        clearInterval(t);
+        publish(id, "warming", { progress: 1 });
+        window.setTimeout(() => publish(id, "ready", { backend: "GPU" }), 1200);
+      } else publish(id, "loading", { progress: p });
+    }, 250);
+  }
+  window.setTimeout(() => {
+    if (modelInstalled) startLoad("whisper-base.en");
+    if (assistInstalled) startLoad(ASSIST_ID);
+  }, 400);
+
   mockIPC(
     (cmd, args) => {
       const a = (args ?? {}) as Record<string, any>;
@@ -135,6 +187,7 @@ export function installMock(variant: string) {
               size_bytes: 147_964_211,
               license: "MIT",
               installed: modelInstalled,
+              partial_bytes: partial["whisper-base.en"],
               is_default: true,
             },
             {
@@ -145,6 +198,7 @@ export function installMock(variant: string) {
               size_bytes: 3_106_738_272,
               license: "Apache-2.0",
               installed: assistInstalled,
+              partial_bytes: partial[ASSIST_ID],
               is_default: true,
             },
           ];
@@ -168,7 +222,7 @@ export function installMock(variant: string) {
           const timer = window.setInterval(() => {
             if (!hintBusy) {
               clearInterval(timer);
-              emit("hint-done", { meeting_id: a.meetingId, hint_id: id, text: null, cancelled: true, error: null, first_token_ms: 0, total_ms: 0, tokens: 0 });
+              emit("hint-done", { meeting_id: a.meetingId, hint_id: id, text: null, cancelled: true, error: null, first_token_ms: 0, total_ms: 0, tokens: 0, on_gpu: false, cpu_fallback: false });
               return;
             }
             i++;
@@ -176,25 +230,52 @@ export function installMock(variant: string) {
             if (i >= words.length) {
               clearInterval(timer);
               hintBusy = false;
-              emit("hint-done", { meeting_id: a.meetingId, hint_id: id, text: words.join(" "), cancelled: false, error: null, first_token_ms: 900, total_ms: Date.now() - t0, tokens: words.length });
+              emit("hint-done", { meeting_id: a.meetingId, hint_id: id, text: words.join(" "), cancelled: false, error: null, first_token_ms: 900, total_ms: Date.now() - t0, tokens: words.length, on_gpu: true, cpu_fallback: false });
             }
           }, 450);
           return id;
         }
         case "download_model": {
-          let d = 0;
-          const total = 147_964_211;
-          const t = window.setInterval(() => {
-            d += 9_000_000;
-            if (d >= total) {
-              clearInterval(t);
-              if (a.id === "gemma-4-e2b-it") assistInstalled = true;
-              else modelInstalled = true;
-              emit("model-download", { id: a.id, downloaded: total, total, done: true, error: null });
-            } else emit("model-download", { id: a.id, downloaded: d, total, done: false, error: null });
-          }, 300);
+          const id: string = a.id;
+          const total = SIZES[id];
+          const step = id === ASSIST_ID ? 90_000_000 : 12_000_000;
+          const failAt = variant === "dlfail" && id === ASSIST_ID && !dlFailedOnce ? total * 0.4 : Infinity;
+          dlTimer = window.setInterval(() => {
+            partial[id] = Math.min(total, partial[id] + step);
+            if (partial[id] >= failAt) {
+              clearInterval(dlTimer);
+              dlFailedOnce = true;
+              emit("model-download", { id, phase: "failed", downloaded: partial[id], total, error: "download interrupted: connection reset by peer" });
+              return;
+            }
+            if (partial[id] >= total) {
+              clearInterval(dlTimer);
+              emit("model-download", { id, phase: "verifying", downloaded: total, total, error: null });
+              window.setTimeout(() => {
+                partial[id] = 0;
+                if (id === ASSIST_ID) assistInstalled = true;
+                else modelInstalled = true;
+                emit("model-download", { id, phase: "done", downloaded: total, total, error: null });
+                startLoad(id);
+              }, 1500);
+            } else emit("model-download", { id, phase: "downloading", downloaded: partial[id], total, error: null });
+          }, 250);
           return null;
         }
+        case "cancel_download": {
+          clearInterval(dlTimer);
+          const id = Object.keys(partial).find((k) => partial[k] > 0 && partial[k] < SIZES[k]);
+          if (id) emit("model-download", { id, phase: "paused", downloaded: partial[id], total: SIZES[id], error: null });
+          return null;
+        }
+        case "discard_download":
+          partial[a.id] = 0;
+          return null;
+        case "model_runtime":
+          return Object.values(runtime);
+        case "retry_model_load":
+          startLoad(a.id);
+          return null;
         case "get_transcript":
           return transcripts.get(a.id) ?? [];
         case "transcribe_meeting": {

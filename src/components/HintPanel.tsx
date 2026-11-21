@@ -32,7 +32,12 @@ export default function HintPanel({ state, onCancel, onDismiss }: Props) {
         </div>
       </div>
       <div className="hint-side">
-        {state.kind === "done" && <small className="muted">{(state.ms / 1000).toFixed(1)} s</small>}
+        {state.kind === "done" && (
+          <small className="muted" title={state.fellBack ? "The GPU could not run the model, so this hint used the CPU" : undefined}>
+            {(state.ms / 1000).toFixed(1)} s · {state.backend}
+            {state.fellBack ? " (fallback)" : ""}
+          </small>
+        )}
         {state.kind === "working" ? (
           <button className="btn btn-sm" onClick={onCancel}>
             Stop

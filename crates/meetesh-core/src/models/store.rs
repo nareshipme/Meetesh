@@ -19,17 +19,32 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-pub fn sha256_file(path: &Path) -> Result<String> {
+/// What a running download is doing. `Verifying` is the (usually short) checksum step.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DownloadProgress {
+    Bytes { downloaded: u64, total: u64 },
+    Verifying,
+}
+
+/// Feed a file into `hasher`, stopping early (as `Error::Cancelled`) if `cancel` is set.
+fn hash_file_into(hasher: &mut Sha256, path: &Path, cancel: &AtomicBool) -> Result<()> {
     let mut f = File::open(path)?;
-    let mut h = Sha256::new();
     let mut buf = vec![0u8; 1 << 20];
     loop {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(Error::Cancelled);
+        }
         let n = f.read(&mut buf)?;
         if n == 0 {
-            break;
+            return Ok(());
         }
-        h.update(&buf[..n]);
+        hasher.update(&buf[..n]);
     }
+}
+
+pub fn sha256_file(path: &Path) -> Result<String> {
+    let mut h = Sha256::new();
+    hash_file_into(&mut h, path, &AtomicBool::new(false))?;
     Ok(hex(&h.finalize()))
 }
 
@@ -67,13 +82,34 @@ impl ModelStore {
         Ok(())
     }
 
-    /// Download (or resume) a model. `on_progress(downloaded, total)` is called as bytes arrive.
-    /// On cancel the partial file is kept so the next call resumes. A checksum mismatch deletes it.
-    pub fn download(&self, e: &ModelEntry, mut on_progress: impl FnMut(u64, u64), cancel: &AtomicBool) -> Result<PathBuf> {
+    /// Bytes already downloaded for an unfinished download (0 if none). Lets the UI show "Paused at 42%".
+    pub fn partial_bytes(&self, e: &ModelEntry) -> u64 {
+        if self.is_installed(e) {
+            return 0;
+        }
+        fs::metadata(self.part_path(e)).map(|m| m.len().min(e.size_bytes)).unwrap_or(0)
+    }
+
+    /// Throw away an unfinished download.
+    pub fn discard_partial(&self, e: &ModelEntry) -> Result<()> {
+        let p = self.part_path(e);
+        if p.exists() {
+            fs::remove_file(p)?;
+        }
+        Ok(())
+    }
+
+    /// Download (or resume) a model.
+    ///
+    /// The checksum is computed while the bytes arrive, so there is no slow second pass at 100%.
+    /// Resuming first re-reads the partial file to continue the hash (reported as `Verifying`).
+    /// If `cancel` is set the partial file is kept, so the next call resumes ("pause"). A checksum
+    /// mismatch deletes the file.
+    pub fn download(&self, e: &ModelEntry, mut on_progress: impl FnMut(DownloadProgress), cancel: &AtomicBool) -> Result<PathBuf> {
         fs::create_dir_all(&self.dir)?;
         let final_path = self.path(e);
         if self.is_installed(e) {
-            on_progress(e.size_bytes, e.size_bytes);
+            on_progress(DownloadProgress::Bytes { downloaded: e.size_bytes, total: e.size_bytes });
             return Ok(final_path);
         }
         let part = self.part_path(e);
@@ -81,6 +117,17 @@ impl ModelStore {
         if have > e.size_bytes {
             fs::remove_file(&part)?;
             have = 0;
+        }
+
+        // Continue the hash over what is already on disk.
+        let mut hasher = Sha256::new();
+        if have > 0 {
+            on_progress(if have == e.size_bytes {
+                DownloadProgress::Verifying
+            } else {
+                DownloadProgress::Bytes { downloaded: have, total: e.size_bytes }
+            });
+            hash_file_into(&mut hasher, &part, cancel)?;
         }
 
         if have < e.size_bytes {
@@ -103,6 +150,7 @@ impl ModelStore {
                 OpenOptions::new().append(true).open(&part)?
             } else {
                 have = 0;
+                hasher = Sha256::new();
                 File::create(&part)?
             };
             let mut reader = resp.into_reader();
@@ -118,10 +166,11 @@ impl ModelStore {
                     break;
                 }
                 file.write_all(&buf[..n])?;
+                hasher.update(&buf[..n]);
                 have += n as u64;
                 since_report += n;
                 if since_report >= 256 * 1024 {
-                    on_progress(have, e.size_bytes);
+                    on_progress(DownloadProgress::Bytes { downloaded: have, total: e.size_bytes });
                     since_report = 0;
                 }
             }
@@ -133,12 +182,12 @@ impl ModelStore {
             // keep the partial file: it may just be a dropped connection, and a retry resumes
             return Err(Error::Other(format!("download incomplete ({size} of {} bytes)", e.size_bytes)));
         }
-        if !sha256_file(&part)?.eq_ignore_ascii_case(&e.sha256) {
+        if !hex(&hasher.finalize()).eq_ignore_ascii_case(&e.sha256) {
             let _ = fs::remove_file(&part);
             return Err(Error::Other(format!("checksum mismatch for {}; the file was discarded", e.id)));
         }
         fs::rename(&part, &final_path)?;
-        on_progress(e.size_bytes, e.size_bytes);
+        on_progress(DownloadProgress::Bytes { downloaded: e.size_bytes, total: e.size_bytes });
         Ok(final_path)
     }
 }
@@ -228,13 +277,15 @@ mod tests {
         let dir = tmp("full");
         let store = store(&dir);
         let mut last = (0, 0);
-        let p = store.download(&e, |d, t| last = (d, t), &AtomicBool::new(false)).unwrap();
+        let p = store
+            .download(&e, |p| if let DownloadProgress::Bytes { downloaded, total } = p { last = (downloaded, total) }, &AtomicBool::new(false))
+            .unwrap();
         assert_eq!(fs::read(&p).unwrap(), b);
         assert_eq!(last, (700_000, 700_000));
         assert!(store.is_installed(&e));
         assert!(!dir.join("test.bin.part").exists());
         // already installed: no network needed
-        assert!(store.download(&e, |_, _| {}, &AtomicBool::new(false)).is_ok());
+        assert!(store.download(&e, |_| {}, &AtomicBool::new(false)).is_ok());
         store.delete(&e).unwrap();
         assert!(!store.is_installed(&e));
         fs::remove_dir_all(dir).ok();
@@ -249,7 +300,7 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("test.bin.part"), &b[..600_000]).unwrap();
         let store = store(&dir);
-        let p = store.download(&e, |_, _| {}, &AtomicBool::new(false)).unwrap();
+        let p = store.download(&e, |_| {}, &AtomicBool::new(false)).unwrap();
         assert_eq!(fs::read(p).unwrap(), b);
         assert_eq!(served.load(Ordering::Relaxed), 300_000, "only the missing tail may be transferred");
         fs::remove_dir_all(dir).ok();
@@ -264,7 +315,7 @@ mod tests {
         let e = entry(&url, &b); // checksum of the good bytes
         let dir = tmp("bad");
         let store = store(&dir);
-        let err = store.download(&e, |_, _| {}, &AtomicBool::new(false)).unwrap_err();
+        let err = store.download(&e, |_| {}, &AtomicBool::new(false)).unwrap_err();
         assert!(err.to_string().contains("checksum"), "{err}");
         assert!(!store.is_installed(&e));
         assert!(!dir.join("test.bin.part").exists());
@@ -279,11 +330,15 @@ mod tests {
         let dir = tmp("cancel");
         let store = store(&dir);
         let cancel = AtomicBool::new(false);
-        let r = store.download(&e, |d, _| if d > 400_000 { cancel.store(true, Ordering::Relaxed) }, &cancel);
+        let r = store.download(
+            &e,
+            |p| if let DownloadProgress::Bytes { downloaded, .. } = p { if downloaded > 400_000 { cancel.store(true, Ordering::Relaxed) } },
+            &cancel,
+        );
         assert!(matches!(r, Err(Error::Cancelled)));
         let partial = fs::metadata(dir.join("test.bin.part")).unwrap().len();
         assert!(partial > 0 && partial < 2_000_000);
-        let p = store.download(&e, |_, _| {}, &AtomicBool::new(false)).unwrap();
+        let p = store.download(&e, |_| {}, &AtomicBool::new(false)).unwrap();
         assert_eq!(fs::read(p).unwrap(), b);
         fs::remove_dir_all(dir).ok();
     }
@@ -296,8 +351,48 @@ mod tests {
         let dir = tmp("big");
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("test.bin.part"), vec![1u8; 80_000]).unwrap();
-        let p = store(&dir).download(&e, |_, _| {}, &AtomicBool::new(false)).unwrap();
+        let p = store(&dir).download(&e, |_| {}, &AtomicBool::new(false)).unwrap();
         assert_eq!(fs::read(p).unwrap(), b);
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn reports_partial_size_and_can_discard_it() {
+        let b = body(1_000);
+        let (url, _) = serve(b.clone());
+        let e = entry(&url, &b);
+        let dir = tmp("partial");
+        fs::create_dir_all(&dir).unwrap();
+        let st = store(&dir);
+        assert_eq!(st.partial_bytes(&e), 0);
+        fs::write(dir.join("test.bin.part"), &b[..400]).unwrap();
+        assert_eq!(st.partial_bytes(&e), 400);
+        st.discard_partial(&e).unwrap();
+        assert_eq!(st.partial_bytes(&e), 0);
+        st.discard_partial(&e).unwrap(); // idempotent
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_complete_partial_file_is_verified_not_redownloaded() {
+        let b = body(300_000);
+        let (url, served) = serve(b.clone());
+        let e = entry(&url, &b);
+        let dir = tmp("complete-part");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("test.bin.part"), &b).unwrap(); // interrupted right before the rename
+        let mut saw_verifying = false;
+        let p = store(&dir).download(&e, |p| saw_verifying |= p == DownloadProgress::Verifying, &AtomicBool::new(false)).unwrap();
+        assert!(saw_verifying);
+        assert_eq!(fs::read(p).unwrap(), b);
+        assert_eq!(served.load(Ordering::Relaxed), 0, "nothing should be fetched");
+        // and a corrupt complete partial is rejected
+        let mut bad = b.clone();
+        bad[10] ^= 1;
+        fs::remove_file(dir.join("test.bin")).unwrap();
+        fs::write(dir.join("test.bin.part"), &bad).unwrap();
+        let err = store(&dir).download(&e, |_| {}, &AtomicBool::new(false)).unwrap_err();
+        assert!(err.to_string().contains("checksum"), "{err}");
         fs::remove_dir_all(dir).ok();
     }
 }

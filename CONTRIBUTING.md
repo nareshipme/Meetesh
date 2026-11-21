@@ -27,6 +27,16 @@ These keep the project private, portable and easy to change:
 5. **Never log transcript or audio content.** Log ids, counts and timings only.
 6. **Keep all `invoke()` calls in `src/api.ts`** so the UI stays easy to test and port.
 
+## Definition of done
+A piece of work (a slice, a feature, a notable fix) is not done until all of these are true:
+
+1. **The README is up to date.** What works today, limitations, roadmap, troubleshooting, quick start and commands all match what the code now does. A stale README is a bug.
+2. **`TESTING.md` covers the change**, so someone can check it by hand.
+3. **Tests pass** (`cargo test --workspace`, `npm run build`) and new behavior has tests.
+4. **The pull request says what was not tested** (for example real hardware, or another OS).
+
+The pull request template repeats this as a checklist.
+
 ## Making a change
 1. Open an issue for anything bigger than a small fix, so we can agree on the approach.
 2. Branch from `main`, keep the change small, and add tests for new behavior. The core is designed to be testable without hardware (see the fake sources and transcribers in the existing tests).

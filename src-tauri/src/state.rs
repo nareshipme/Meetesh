@@ -1,5 +1,6 @@
 //! Shared application state and the pieces of it that several modules need.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
@@ -13,6 +14,7 @@ use meetesh_core::{Db, Error, Result};
 use tauri::{AppHandle, Manager};
 
 use crate::capture::CaptureHandle;
+use crate::events::ModelLoadEvent;
 use meetesh_core::audio::RecordingSession;
 
 /// Device class for picking default models from the manifest (NFR-24).
@@ -48,6 +50,8 @@ pub struct AppState {
     /// Loaded assist model (about 4 GB in memory). Loaded on the first hint, kept afterwards.
     pub assistant: Mutex<Option<Arc<LlamaAssistant>>>,
     pub hint_job: Mutex<Option<HintJob>>,
+    /// Latest load state per model id, so the UI can sync after a reload.
+    pub runtime: Mutex<HashMap<String, ModelLoadEvent>>,
     pub download_cancel: Arc<AtomicBool>,
     pub downloading: Mutex<bool>,
 }
@@ -73,6 +77,7 @@ impl AppState {
             job: Mutex::new(None),
             assistant: Mutex::new(None),
             hint_job: Mutex::new(None),
+            runtime: Mutex::new(HashMap::new()),
             download_cancel: Arc::new(AtomicBool::new(false)),
             downloading: Mutex::new(false),
         })
@@ -98,8 +103,13 @@ impl AppState {
 /// Context window for hints: about 1,900 tokens of prompt plus the reply fit comfortably.
 const ASSIST_CONTEXT_TOKENS: u32 = 4096;
 
-/// Load (or reuse) the assist model. Takes a couple of seconds the first time.
+/// Load (or reuse) the assist model. Takes a couple of seconds if it is not loaded yet.
 pub fn get_assistant(app: &AppHandle) -> Result<Arc<LlamaAssistant>> {
+    load_assistant(app, |_| {})
+}
+
+/// Like `get_assistant`, reporting real loading progress (0.0 to 1.0) while it loads.
+pub fn load_assistant(app: &AppHandle, on_progress: impl FnMut(f32) + 'static) -> Result<Arc<LlamaAssistant>> {
     let st = app.state::<AppState>();
     let entry = st.assist_model()?.clone();
     let mut cached = st.assistant.lock().unwrap();
@@ -108,7 +118,7 @@ pub fn get_assistant(app: &AppHandle) -> Result<Arc<LlamaAssistant>> {
             return Ok(a.clone());
         }
     }
-    let a = Arc::new(LlamaAssistant::load(&entry.id, &st.models.path(&entry), ASSIST_CONTEXT_TOKENS)?);
+    let a = Arc::new(LlamaAssistant::load_with_progress(&entry.id, &st.models.path(&entry), ASSIST_CONTEXT_TOKENS, on_progress)?);
     *cached = Some(a.clone());
     Ok(a)
 }

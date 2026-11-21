@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, Meeting } from "../api";
+import type { ModelLoadEvent } from "../api";
 import type { Notify } from "../hooks/useToasts";
 import { errorText, fmtDuration, fmtWhen } from "../lib/format";
 import AgendaField from "./AgendaField";
@@ -11,13 +12,14 @@ interface Props {
   recording: boolean;
   modelReady: boolean;
   assistReady: boolean;
+  assistLoad: ModelLoadEvent | undefined;
   notify: Notify;
   onChange: () => void;
   onBack: () => void;
   onDeleted: () => void;
 }
 
-export default function MeetingView({ meeting, recording, modelReady, assistReady, notify, onChange, onBack, onDeleted }: Props) {
+export default function MeetingView({ meeting, recording, modelReady, assistReady, assistLoad, notify, onChange, onBack, onDeleted }: Props) {
   const [title, setTitle] = useState(meeting.title);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
@@ -123,6 +125,7 @@ export default function MeetingView({ meeting, recording, modelReady, assistRead
         meeting={meeting}
         modelReady={modelReady}
         assistReady={assistReady}
+        assistLoad={assistLoad}
         recording={recording}
         notify={notify}
         onChange={onChange}

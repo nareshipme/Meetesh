@@ -57,8 +57,13 @@ pub fn request_hint(app: AppHandle, meeting_id: i64) -> Result<u64> {
             Ok(c) => {
                 // Timings and counts only: never log the hint or transcript text.
                 log::info!(
-                    "hint for meeting {meeting_id}: {} prompt tokens, {} generated, first token {} ms, total {} ms",
-                    c.stats.prompt_tokens, c.stats.generated_tokens, c.stats.first_token_ms, c.stats.total_ms
+                    "hint for meeting {meeting_id}: {} prompt tokens, {} generated, first token {} ms, total {} ms, {}{}",
+                    c.stats.prompt_tokens,
+                    c.stats.generated_tokens,
+                    c.stats.first_token_ms,
+                    c.stats.total_ms,
+                    if c.stats.on_gpu { "GPU" } else { "CPU" },
+                    if c.stats.cpu_fallback { " (GPU failed, fell back to CPU)" } else { "" }
                 );
                 HintDoneEvent {
                     meeting_id,
@@ -69,11 +74,13 @@ pub fn request_hint(app: AppHandle, meeting_id: i64) -> Result<u64> {
                     first_token_ms: c.stats.first_token_ms,
                     total_ms: c.stats.total_ms,
                     tokens: c.stats.generated_tokens,
+                    on_gpu: c.stats.on_gpu,
+                    cpu_fallback: c.stats.cpu_fallback,
                 }
             }
             Err(e) => {
                 log::warn!("hint failed: {e}");
-                HintDoneEvent { meeting_id, hint_id, text: None, cancelled: false, error: Some(e.to_string()), first_token_ms: 0, total_ms: 0, tokens: 0 }
+                HintDoneEvent { meeting_id, hint_id, text: None, cancelled: false, error: Some(e.to_string()), first_token_ms: 0, total_ms: 0, tokens: 0, on_gpu: false, cpu_fallback: false }
             }
         };
         let _ = app.emit(HINT_DONE, done);

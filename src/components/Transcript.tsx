@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, Meeting, TranscriptSegment } from "../api";
+import { api, Meeting, ModelLoadEvent, TranscriptSegment } from "../api";
 import type { Notify } from "../hooks/useToasts";
 import { useHint } from "../hooks/useHint";
 import { errorText, fmtDuration } from "../lib/format";
@@ -9,18 +9,20 @@ interface Props {
   meeting: Meeting;
   modelReady: boolean;
   assistReady: boolean;
+  assistLoad: ModelLoadEvent | undefined;
   recording: boolean;
   notify: Notify;
   onChange: () => void;
 }
 
-export default function Transcript({ meeting, modelReady, assistReady, recording, notify, onChange }: Props) {
+export default function Transcript({ meeting, modelReady, assistReady, assistLoad, recording, notify, onChange }: Props) {
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const [progress, setProgress] = useState<number | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   const hint = useHint(meeting.id, notify);
-  const canHint = assistReady && segments.length > 0 && hint.state.kind !== "working";
+  const assistLoading = assistLoad?.state === "loading" || assistLoad?.state === "warming";
+  const canHint = assistReady && !assistLoading && segments.length > 0 && hint.state.kind !== "working";
 
   // Cmd/Ctrl+Shift+H asks for a hint (in-app shortcut; a global hotkey comes later).
   useEffect(() => {
@@ -117,7 +119,9 @@ export default function Transcript({ meeting, modelReady, assistReady, recording
             title={
               !assistReady
                 ? "Download the live assist model first (sidebar)"
-                : segments.length === 0
+                : assistLoading
+                  ? "The live assist model is still loading (see the bar at the top)"
+                  : segments.length === 0
                   ? "Nothing to base a hint on yet"
                   : "Get a hint from the last few minutes (Ctrl/Cmd+Shift+H)"
             }

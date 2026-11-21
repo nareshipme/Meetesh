@@ -11,6 +11,7 @@ mod capture;
 mod commands;
 mod events;
 mod live;
+mod runtime;
 mod state;
 
 use commands::{assist, meetings, models, recording, transcription};
@@ -30,6 +31,8 @@ pub fn run() {
         .setup(|app| {
             let state = AppState::open(&app.path().app_data_dir()?)?;
             app.manage(state);
+            // Load installed models in the background now, so nobody waits for them later.
+            runtime::preload_all(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -47,6 +50,9 @@ pub fn run() {
             models::download_model,
             models::cancel_download,
             models::delete_model,
+            models::discard_download,
+            models::model_runtime,
+            models::retry_model_load,
             transcription::get_transcript,
             transcription::transcribe_meeting,
             transcription::cancel_transcription,

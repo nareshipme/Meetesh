@@ -102,3 +102,50 @@ fn streams_a_useful_hint_and_can_be_cancelled() {
     eprintln!("second run: first token {} ms, total {} ms", again.stats.first_token_ms, again.stats.total_ms);
     assert!(!again.text.is_empty());
 }
+
+#[test]
+fn reports_load_progress_warms_up_and_recovers_from_a_gpu_failure() {
+    let Some(path) = model_path() else {
+        eprintln!("MEETESH_TEST_ASSIST_MODEL not set; skipping");
+        return;
+    };
+    // 1. real loading progress from llama.cpp: increasing, ending at 1.0
+    let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::<f32>::new()));
+    let s2 = seen.clone();
+    let a = LlamaAssistant::load_with_progress("test-assist", &path, 4096, move |p| s2.borrow_mut().push(p)).expect("loads");
+    let seen = seen.borrow();
+    eprintln!("load progress: {} updates, first {:?}, last {:?}", seen.len(), seen.first(), seen.last());
+    assert!(seen.len() > 3, "expected several progress updates");
+    assert!(seen.windows(2).all(|w| w[0] <= w[1]), "progress never goes backwards");
+    assert!(*seen.last().unwrap() > 0.99);
+
+    // 2. warm-up works and reports which backend ran
+    let w = a.warm_up().expect("warm-up");
+    eprintln!("warm-up: {} ms, gpu={}, fallback={}", w.total_ms, w.on_gpu, w.cpu_fallback);
+    assert!(!w.cpu_fallback);
+
+    // 3. a GPU compute failure is recovered transparently on the CPU
+    a.simulate_gpu_failure_once();
+    assert!(a.uses_gpu(), "the hook pretends the GPU is in use");
+    let ctx = HintContext {
+        agenda: String::new(),
+        recent: vec![seg(1_000, "Can you send me the report by Friday?")],
+    };
+    let messages = build_hint_messages(&ctx, Budget::default());
+    let mut pieces = String::new();
+    let done = a
+        .complete(&messages, &GenOptions::hint(Arc::new(AtomicBool::new(false))), &mut |p| {
+            pieces.push_str(p);
+            true
+        })
+        .expect("falls back and succeeds");
+    eprintln!("after injected GPU failure: cpu_fallback={} on_gpu={} text={:?}", done.stats.cpu_fallback, done.stats.on_gpu, done.text);
+    assert!(done.stats.cpu_fallback && !done.stats.on_gpu);
+    assert!(!done.text.is_empty());
+    assert_eq!(pieces, done.text, "no text was duplicated by the retry");
+    assert!(!a.uses_gpu(), "later requests stay on the CPU");
+
+    // 4. and the next request works normally
+    let again = a.complete(&messages, &GenOptions::hint(Arc::new(AtomicBool::new(false))), &mut |_| true).expect("next request");
+    assert!(!again.stats.cpu_fallback && !again.text.is_empty());
+}

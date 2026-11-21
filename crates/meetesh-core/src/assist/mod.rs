@@ -69,6 +69,10 @@ pub struct GenStats {
     pub first_token_ms: u64,
     pub total_ms: u64,
     pub cancelled: bool,
+    /// True when the model ran on the GPU (Metal, CUDA, ...), false when on the CPU.
+    pub on_gpu: bool,
+    /// True when the GPU failed and this request was transparently redone on the CPU.
+    pub cpu_fallback: bool,
 }
 
 #[derive(Debug, Clone)]
