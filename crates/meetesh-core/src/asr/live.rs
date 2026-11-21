@@ -224,7 +224,10 @@ mod tests {
     #[test]
     fn multiple_utterances_arrive_in_order_with_absolute_timestamps() {
         let (l, got, done_rx) = live(0, 8);
-        let session = RecordingSession::start(vec![Box::new(l)], 256);
+        // The test pushes ~530 frames back to back, so the queue must be larger than that: by design
+        // a full queue drops frames rather than block capture, which would make this test depend on
+        // how busy the machine is.
+        let session = RecordingSession::start(vec![Box::new(l)], 4096);
         let mut p = session.pusher(16_000, 1);
         let mut audio = quiet(200);
         for _ in 0..3 {
@@ -234,7 +237,7 @@ mod tests {
         for c in audio.chunks(160) {
             p.push_interleaved(c);
         }
-        session.stop();
+        assert_eq!(session.stop().dropped_frames, 0, "test input must not overflow the queue");
         let report = done_rx.recv_timeout(Duration::from_secs(3)).unwrap();
         let segs = got.lock().unwrap().clone();
         assert_eq!(segs.len(), 3);

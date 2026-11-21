@@ -1,21 +1,38 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, Meeting, TranscriptSegment } from "../api";
 import type { Notify } from "../hooks/useToasts";
+import { useHint } from "../hooks/useHint";
 import { errorText, fmtDuration } from "../lib/format";
+import HintPanel from "./HintPanel";
 
 interface Props {
   meeting: Meeting;
   modelReady: boolean;
+  assistReady: boolean;
   recording: boolean;
   notify: Notify;
   onChange: () => void;
 }
 
-export default function Transcript({ meeting, modelReady, recording, notify, onChange }: Props) {
+export default function Transcript({ meeting, modelReady, assistReady, recording, notify, onChange }: Props) {
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const [progress, setProgress] = useState<number | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
+  const hint = useHint(meeting.id, notify);
+  const canHint = assistReady && segments.length > 0 && hint.state.kind !== "working";
+
+  // Cmd/Ctrl+Shift+H asks for a hint (in-app shortcut; a global hotkey comes later).
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "h" && canHint) {
+        e.preventDefault();
+        hint.request();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [canHint, hint.request]);
 
   const load = useCallback(() => {
     api.getTranscript(meeting.id).then(setSegments).catch((e) => notify("error", errorText(e)));
@@ -93,6 +110,20 @@ export default function Transcript({ meeting, modelReady, recording, notify, onC
           {recording && modelReady && <span className="live-badge">Live</span>}
         </h2>
         <div className="row">
+          <button
+            className="btn btn-sm btn-hint"
+            onClick={hint.request}
+            disabled={!canHint}
+            title={
+              !assistReady
+                ? "Download the live assist model first (sidebar)"
+                : segments.length === 0
+                  ? "Nothing to base a hint on yet"
+                  : "Get a hint from the last few minutes (Ctrl/Cmd+Shift+H)"
+            }
+          >
+            ✦ Hint
+          </button>
           {segments.length > 0 && (
             <button className="btn btn-sm" onClick={copy}>
               Copy
@@ -115,6 +146,8 @@ export default function Transcript({ meeting, modelReady, recording, notify, onC
           </button>
         </div>
       )}
+
+      <HintPanel state={hint.state} onCancel={hint.cancel} onDismiss={hint.dismiss} />
 
       <div className="transcript-body" ref={bodyRef} onScroll={onScroll}>
         {segments.length > 0 ? (

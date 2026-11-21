@@ -26,6 +26,8 @@ The name comes from *ishara* (इशारा), Hindi/Urdu for a quiet hint or s
 | Local transcription of a finished recording (Whisper) with timestamps | Working |
 | Live transcription while recording (text a few seconds behind speech) | Working |
 | Manifest-driven model download with resume, progress, cancel and checksum | Working |
+| Live assist: ask for a short hint from the last few minutes (button or Ctrl/Cmd+Shift+H), written by an on-device model (Gemma 4 E2B), streamed into the window | Working (manual trigger) |
+| Optional meeting goals that keep hints on topic | Working |
 | Meetings list, rename, delete (audio is deleted with the meeting), WAV export | Working |
 | Responsive, dark-mode-aware UI | Working |
 
@@ -33,13 +35,15 @@ The name comes from *ishara* (इशारा), Hindi/Urdu for a quiet hint or s
 
 | | Planned |
 |---|---|
-| Next | **Local live assist**: short hints during the meeting from a small on-device LLM (no Ollama needed, model downloaded on demand) |
+| Next | **Automatic hint triggers** (a question is asked, a long pause), a global hotkey, and a hint overlay that floats over other apps |
 | Then | AI summaries (local via Ollama, or Claude with your own key), search, Markdown export |
 | Then | System-audio capture so other participants are transcribed (per OS: WASAPI loopback, ScreenCaptureKit, PipeWire/PulseAudio) |
 | Then | Settings and onboarding, signed installers and auto-update |
 | Later | Mobile companion app, speaker labels, audio-file import |
 
 ## Limitations
+
+- Hints are requested manually for now. The assist model is a 3.1 GB download and uses about 4 GB of memory while loaded, and the first hint takes a few seconds longer because it loads the model. On a CPU-only 4-core Linux machine a hint takes about 6 s; GPU acceleration (Metal on macOS) is expected to be much faster but is untested.
 
 - Microphone only. It cannot yet capture the other side of a call.
 - English-only speech models are bundled in the manifest for now.
@@ -114,4 +118,4 @@ Meetesh does not send audio or transcripts anywhere. The only network access is 
 
 [MIT](LICENSE) © Meetesh contributors.
 
-Speech recognition uses [whisper.cpp](https://github.com/ggml-org/whisper.cpp) (MIT) and OpenAI Whisper model weights (MIT), downloaded on demand. Built with [Tauri](https://tauri.app), [cpal](https://github.com/RustAudio/cpal) and [rusqlite](https://github.com/rusqlite/rusqlite). Inspired by Meetily, the open-source meeting assistant.
+Speech recognition uses [whisper.cpp](https://github.com/ggml-org/whisper.cpp) (MIT) and OpenAI Whisper model weights (MIT). Live assist uses [llama.cpp](https://github.com/ggml-org/llama.cpp) (MIT) and Google's Gemma 4 E2B (Apache-2.0, GGUF conversion by Unsloth). Models are downloaded on demand. Built with [Tauri](https://tauri.app), [cpal](https://github.com/RustAudio/cpal) and [rusqlite](https://github.com/rusqlite/rusqlite). Inspired by Meetily, the open-source meeting assistant.

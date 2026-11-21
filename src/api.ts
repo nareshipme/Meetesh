@@ -7,6 +7,8 @@ export interface Meeting {
   created_at: number; // unix seconds
   summary: string;
   transcript_model: string;
+  /** Goals typed by the user; context for live hints. */
+  agenda: string;
   status: "stopped" | "recording" | "recovered";
   duration_ms: number;
   audio_dir: string;
@@ -25,6 +27,8 @@ export interface TranscriptSegment {
 
 export interface ModelInfo {
   id: string;
+  /** "asr" = speech recognition, "assist" = live hints */
+  role: "asr" | "assist";
   name: string;
   description: string;
   size_bytes: number;
@@ -59,6 +63,25 @@ export interface LiveDoneEvent {
   full_pass_started: boolean;
 }
 
+export interface HintPieceEvent {
+  meeting_id: number;
+  hint_id: number;
+  /** Everything generated so far (raw). */
+  text: string;
+}
+
+export interface HintDoneEvent {
+  meeting_id: number;
+  hint_id: number;
+  /** Cleaned hint; null when the model had nothing useful to say. */
+  text: string | null;
+  cancelled: boolean;
+  error: string | null;
+  first_token_ms: number;
+  total_ms: number;
+  tokens: number;
+}
+
 // Thin typed wrapper over the Rust commands. Keep all invoke() calls here so the
 // UI never depends on Tauri directly (easier to mock in tests, and for mobile).
 export const api = {
@@ -86,5 +109,12 @@ export const api = {
   onLiveSegments: (cb: (e: LiveSegmentsEvent) => void) =>
     listen<LiveSegmentsEvent>("live-segments", (e) => cb(e.payload)),
   onLiveDone: (cb: (e: LiveDoneEvent) => void) => listen<LiveDoneEvent>("live-done", (e) => cb(e.payload)),
+  setAgenda: (id: number, agenda: string) => invoke<Meeting>("set_agenda", { id, agenda }),
+  requestHint: (meetingId: number) => invoke<number>("request_hint", { meetingId }),
+  cancelHint: () => invoke<void>("cancel_hint"),
+  assistReady: () => invoke<boolean>("assist_ready"),
+  activeHint: () => invoke<number | null>("active_hint"),
+  onHintPiece: (cb: (e: HintPieceEvent) => void) => listen<HintPieceEvent>("hint-piece", (e) => cb(e.payload)),
+  onHintDone: (cb: (e: HintDoneEvent) => void) => listen<HintDoneEvent>("hint-done", (e) => cb(e.payload)),
   onLevel: (cb: (level: number) => void) => listen<number>("recording-level", (e) => cb(e.payload)),
 };

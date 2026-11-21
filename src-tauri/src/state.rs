@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use meetesh_core::asr::live::LiveSettle;
 use meetesh_core::asr::whisper::WhisperTranscriber;
+use meetesh_core::assist::llama::LlamaAssistant;
 use meetesh_core::models::store::ModelStore;
 use meetesh_core::models::{Manifest, ModelEntry, Profile, Role};
 use meetesh_core::{Db, Error, Result};
@@ -30,6 +31,11 @@ pub struct TranscriptionJob {
     pub cancel: Arc<AtomicBool>,
 }
 
+pub struct HintJob {
+    pub meeting_id: i64,
+    pub cancel: Arc<AtomicBool>,
+}
+
 pub struct AppState {
     pub db: Mutex<Db>,
     pub recordings_root: PathBuf,
@@ -39,6 +45,9 @@ pub struct AppState {
     /// Loaded model, reused between transcriptions. Reloaded when the active model changes.
     pub transcriber: Mutex<Option<Arc<WhisperTranscriber>>>,
     pub job: Mutex<Option<TranscriptionJob>>,
+    /// Loaded assist model (about 4 GB in memory). Loaded on the first hint, kept afterwards.
+    pub assistant: Mutex<Option<Arc<LlamaAssistant>>>,
+    pub hint_job: Mutex<Option<HintJob>>,
     pub download_cancel: Arc<AtomicBool>,
     pub downloading: Mutex<bool>,
 }
@@ -62,6 +71,8 @@ impl AppState {
             models: ModelStore::new(data_dir.join("models")),
             transcriber: Mutex::new(None),
             job: Mutex::new(None),
+            assistant: Mutex::new(None),
+            hint_job: Mutex::new(None),
             download_cancel: Arc::new(AtomicBool::new(false)),
             downloading: Mutex::new(false),
         })
@@ -73,6 +84,33 @@ impl AppState {
             .default_for(PROFILE, Role::Asr)
             .ok_or_else(|| Error::Other("No speech model configured".into()))
     }
+}
+
+impl AppState {
+    /// The live-assist model the app is configured to use for this device, if there is one.
+    pub fn assist_model(&self) -> Result<&ModelEntry> {
+        self.manifest
+            .default_for(PROFILE, Role::Assist)
+            .ok_or_else(|| Error::Other("Live assist is not available on this device".into()))
+    }
+}
+
+/// Context window for hints: about 1,900 tokens of prompt plus the reply fit comfortably.
+const ASSIST_CONTEXT_TOKENS: u32 = 4096;
+
+/// Load (or reuse) the assist model. Takes a couple of seconds the first time.
+pub fn get_assistant(app: &AppHandle) -> Result<Arc<LlamaAssistant>> {
+    let st = app.state::<AppState>();
+    let entry = st.assist_model()?.clone();
+    let mut cached = st.assistant.lock().unwrap();
+    if let Some(a) = cached.as_ref() {
+        if meetesh_core::assist::Assistant::model_id(a.as_ref()) == entry.id {
+            return Ok(a.clone());
+        }
+    }
+    let a = Arc::new(LlamaAssistant::load(&entry.id, &st.models.path(&entry), ASSIST_CONTEXT_TOKENS)?);
+    *cached = Some(a.clone());
+    Ok(a)
 }
 
 /// Load (or reuse) the speech model. Shared by live and full-recording transcription.

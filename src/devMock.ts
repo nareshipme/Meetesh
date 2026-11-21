@@ -4,7 +4,8 @@
  *
  *   ?mock            two sample meetings, speech model installed
  *   ?mock=empty      no meetings
- *   ?mock=nomodel    speech model not downloaded
+ *   ?mock=nomodel    neither model downloaded
+ *   ?mock=noassist   speech model installed, live-assist model not downloaded
  *
  * Never bundled into production builds: main.tsx imports it only when `import.meta.env.DEV`.
  */
@@ -27,6 +28,8 @@ export function installMock(variant: string) {
   let nextId = 3;
   let recordingId: number | null = null;
   let modelInstalled = variant !== "nomodel";
+  let assistInstalled = variant !== "nomodel" && variant !== "noassist";
+  let hintBusy = false;
   let timers: number[] = [];
   const transcripts = new Map<number, TranscriptSegment[]>();
 
@@ -36,6 +39,7 @@ export function installMock(variant: string) {
     created_at: now() - ageSec,
     summary: "",
     transcript_model: "",
+    agenda: "",
     status: "stopped",
     duration_ms: 0,
     audio_dir: "",
@@ -125,6 +129,7 @@ export function installMock(variant: string) {
           return [
             {
               id: "whisper-base.en",
+              role: "asr",
               name: "Whisper Base (English)",
               description: "",
               size_bytes: 147_964_211,
@@ -132,7 +137,50 @@ export function installMock(variant: string) {
               installed: modelInstalled,
               is_default: true,
             },
+            {
+              id: "gemma-4-e2b-it",
+              role: "assist",
+              name: "Gemma 4 E2B (live assist)",
+              description: "",
+              size_bytes: 3_106_738_272,
+              license: "Apache-2.0",
+              installed: assistInstalled,
+              is_default: true,
+            },
           ];
+        case "set_agenda":
+          find(a.id).agenda = a.agenda;
+          return find(a.id);
+        case "assist_ready":
+          return assistInstalled;
+        case "active_hint":
+          return null;
+        case "cancel_hint":
+          hintBusy = false;
+          return null;
+        case "request_hint": {
+          if (hintBusy) throw "A hint is already being generated";
+          hintBusy = true;
+          const words = "Can you clarify what support needs that extra week for?".split(" ");
+          let i = 0;
+          const t0 = Date.now();
+          const id = Date.now();
+          const timer = window.setInterval(() => {
+            if (!hintBusy) {
+              clearInterval(timer);
+              emit("hint-done", { meeting_id: a.meetingId, hint_id: id, text: null, cancelled: true, error: null, first_token_ms: 0, total_ms: 0, tokens: 0 });
+              return;
+            }
+            i++;
+            emit("hint-piece", { meeting_id: a.meetingId, hint_id: id, text: words.slice(0, i).join(" ") });
+            if (i >= words.length) {
+              clearInterval(timer);
+              hintBusy = false;
+              emit("hint-done", { meeting_id: a.meetingId, hint_id: id, text: words.join(" "), cancelled: false, error: null, first_token_ms: 900, total_ms: Date.now() - t0, tokens: words.length });
+            }
+          }, 450);
+          return id;
+        }
         case "download_model": {
           let d = 0;
           const total = 147_964_211;
@@ -140,7 +188,8 @@ export function installMock(variant: string) {
             d += 9_000_000;
             if (d >= total) {
               clearInterval(t);
-              modelInstalled = true;
+              if (a.id === "gemma-4-e2b-it") assistInstalled = true;
+              else modelInstalled = true;
               emit("model-download", { id: a.id, downloaded: total, total, done: true, error: null });
             } else emit("model-download", { id: a.id, downloaded: d, total, done: false, error: null });
           }, 300);

@@ -13,7 +13,7 @@ mod events;
 mod live;
 mod state;
 
-use commands::{meetings, models, recording, transcription};
+use commands::{assist, meetings, models, recording, transcription};
 use state::AppState;
 use tauri::Manager;
 
@@ -37,6 +37,7 @@ pub fn run() {
             meetings::list_meetings,
             meetings::rename_meeting,
             meetings::delete_meeting,
+            meetings::set_agenda,
             recording::list_input_devices,
             recording::active_recording,
             recording::start_recording,
@@ -49,7 +50,11 @@ pub fn run() {
             transcription::get_transcript,
             transcription::transcribe_meeting,
             transcription::cancel_transcription,
-            transcription::active_transcription
+            transcription::active_transcription,
+            assist::request_hint,
+            assist::cancel_hint,
+            assist::assist_ready,
+            assist::active_hint
         ])
         .run(tauri::generate_context!())
         .expect("error while running Meetesh");

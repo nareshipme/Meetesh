@@ -11,6 +11,8 @@ use crate::state::{AppState, PROFILE};
 #[derive(Serialize)]
 pub struct ModelInfo {
     id: String,
+    /// "asr" (speech recognition) or "assist" (live hints).
+    role: Role,
     name: String,
     description: String,
     size_bytes: u64,
@@ -21,18 +23,24 @@ pub struct ModelInfo {
 
 #[tauri::command]
 pub fn list_models(state: State<AppState>) -> Vec<ModelInfo> {
-    let default_id = state.manifest.default_for(PROFILE, Role::Asr).map(|m| m.id.clone());
-    state
-        .manifest
-        .by_role(Role::Asr)
+    // Every model of a role this device has a default for. Roles with no default (e.g. assist on
+    // mobile) are simply not offered.
+    let defaults: Vec<(Role, String)> = [Role::Asr, Role::Assist]
+        .into_iter()
+        .filter_map(|r| state.manifest.default_for(PROFILE, r).map(|m| (r, m.id.clone())))
+        .collect();
+    defaults
+        .iter()
+        .flat_map(|(role, _)| state.manifest.by_role(*role))
         .map(|m| ModelInfo {
             id: m.id.clone(),
+            role: m.role,
             name: m.name.clone(),
             description: m.description.clone(),
             size_bytes: m.size_bytes,
             license: m.license.clone(),
             installed: state.models.is_installed(m),
-            is_default: default_id.as_deref() == Some(m.id.as_str()),
+            is_default: defaults.iter().any(|(_, id)| id == &m.id),
         })
         .collect()
 }
@@ -80,6 +88,8 @@ pub fn cancel_download(state: State<AppState>) {
 #[tauri::command]
 pub fn delete_model(state: State<AppState>, id: String) -> Result<()> {
     let entry = state.manifest.get(&id).ok_or_else(|| Error::Other(format!("Unknown model {id}")))?;
-    *state.transcriber.lock().unwrap() = None; // release the file
+    // Release the loaded models so their files are not held open.
+    *state.transcriber.lock().unwrap() = None;
+    *state.assistant.lock().unwrap() = None;
     state.models.delete(entry)
 }

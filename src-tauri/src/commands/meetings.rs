@@ -25,3 +25,8 @@ pub fn delete_meeting(state: State<AppState>, id: i64) -> Result<()> {
     }
     state.db.lock().unwrap().delete_meeting(id)
 }
+
+#[tauri::command]
+pub fn set_agenda(state: State<AppState>, id: i64, agenda: String) -> Result<Meeting> {
+    state.db.lock().unwrap().set_agenda(id, &agenda)
+}

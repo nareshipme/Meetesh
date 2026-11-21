@@ -9,7 +9,7 @@ import { errorText } from "./lib/format";
 
 export default function App() {
   const { toasts, notify, dismiss } = useToasts();
-  const { meetings, recordingId, transcribingId, modelReady, refresh } = useMeetings(notify);
+  const { meetings, recordingId, transcribingId, modelReady, assistReady, refresh } = useMeetings(notify);
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
   const selected = meetings.find((m) => m.id === selectedId) ?? null;
@@ -43,6 +43,7 @@ export default function App() {
             meeting={selected}
             recording={recordingId === selected.id}
             modelReady={modelReady}
+            assistReady={assistReady}
             notify={notify}
             onChange={refresh}
             onBack={() => setSelectedId(null)}

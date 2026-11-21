@@ -54,6 +54,15 @@ MEETESH_TEST_MODEL=/path/to/ggml-tiny.en.bin \
 - [ ] Talk continuously for 10+ seconds without pausing: text still appears (it is cut about every 6 seconds).
 - [ ] Stay silent for 10 seconds: nothing is invented (no "thank you", no repeated phrases).
 
+**Live assist** (needs the assist model: about 3.1 GB, in the sidebar)
+- [ ] The sidebar lists two models. Download "Gemma 4 E2B (live assist)". The progress bar moves and the **✦ Hint** button stays disabled until it is ready.
+- [ ] While recording (or on any meeting that has a transcript), click **✦ Hint** or press Ctrl/Cmd+Shift+H. The first hint loads the model (a few seconds), then text streams into a blue panel above the transcript.
+- [ ] The hint is short (one or two sentences), relevant to what was just said, and shows how long it took. Dismiss it with ×.
+- [ ] **Stop** while it is writing cancels it cleanly. Asking again right away works.
+- [ ] Open "Meeting goals", type a goal, click elsewhere, and ask for a hint: it should take the goal into account. Restart the app and check the goal was saved.
+- [ ] Ask for a hint while live transcription is running. Note whether the live text keeps up (a CPU-only machine may fall behind; that is expected and a gap-filling pass runs after stopping).
+- [ ] On macOS, check that generation is fast (the app is built with Metal). Please report the time shown on the hint, your chip, and memory use in Activity Monitor.
+
 **Stopping**
 - [ ] Click **Stop**: it returns instantly. The meeting shows "Recorded m:ss".
 - [ ] After a few seconds the transcript is complete (a gap-filling pass may run if live fell behind).
