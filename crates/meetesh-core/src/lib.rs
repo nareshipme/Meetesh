@@ -3,9 +3,12 @@
 //! Rule (NFR-22): no windowing, no OS-specific audio, no Tauri here.
 //! Platform specifics live behind traits in the shell crates.
 
+pub mod asr;
 pub mod audio;
 pub mod db;
 pub mod error;
+pub mod models;
 
+pub use asr::{TranscriptSegment, Transcriber};
 pub use db::{Db, Meeting};
 pub use error::{Error, Result};

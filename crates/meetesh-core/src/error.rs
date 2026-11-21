@@ -8,6 +8,8 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("meeting {0} not found")]
     NotFound(i64),
+    #[error("cancelled")]
+    Cancelled,
     #[error("{0}")]
     Other(String),
 }

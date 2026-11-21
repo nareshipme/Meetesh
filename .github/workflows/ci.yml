@@ -27,6 +27,13 @@ jobs:
       - run: npm run build
       - run: cargo test --workspace
       - run: cargo build -p meetesh
+      # Real transcription of the spoken fixture with the tiny model (NFR-16).
+      - name: Whisper fixture test
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          curl -L --fail -o ggml-tiny.en.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin
+          echo "921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f  ggml-tiny.en.bin" | sha256sum -c -
+          MEETESH_TEST_MODEL=$PWD/ggml-tiny.en.bin cargo test -p meetesh-core --features whisper --test whisper_fixture -- --nocapture
 
   # NFR-22: the platform-neutral core must keep compiling for mobile targets.
   # Not yet verified in CI; allowed to fail until the first run shows what is needed.

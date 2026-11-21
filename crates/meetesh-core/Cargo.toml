@@ -9,3 +9,11 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 thiserror = "1"
 hound = "3.5"
+whisper-rs = { version = "0.16.0", optional = true }
+ureq = "2"
+sha2 = "0.11.1"
+serde_json = "1.0.154"
+
+[features]
+# whisper.cpp backend. Off by default so the core stays light and easy to cross-compile.
+whisper = ["dep:whisper-rs"]

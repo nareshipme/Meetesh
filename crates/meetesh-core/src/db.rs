@@ -9,6 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 
+use crate::asr::TranscriptSegment;
 use crate::error::{Error, Result};
 
 const MIGRATIONS: &[&str] = &[
@@ -24,6 +25,17 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE meetings ADD COLUMN status      TEXT    NOT NULL DEFAULT 'stopped';
      ALTER TABLE meetings ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0;
      ALTER TABLE meetings ADD COLUMN audio_dir   TEXT    NOT NULL DEFAULT '';",
+    // 3: timestamped transcript segments; remember which model produced them (Slice 2)
+    "ALTER TABLE meetings DROP COLUMN transcript;
+     ALTER TABLE meetings ADD COLUMN transcript_model TEXT NOT NULL DEFAULT '';
+     CREATE TABLE transcript_segments (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        meeting_id INTEGER NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+        start_ms   INTEGER NOT NULL,
+        end_ms     INTEGER NOT NULL,
+        text       TEXT    NOT NULL
+     );
+     CREATE INDEX idx_segments_meeting ON transcript_segments(meeting_id, start_ms);",
 ];
 
 /// `recording`: audio is being captured. `stopped`: finished normally.
@@ -34,18 +46,19 @@ pub mod status {
     pub const RECOVERED: &str = "recovered";
 }
 
-const COLS: &str = "id, title, created_at, transcript, summary, status, duration_ms, audio_dir";
+const COLS: &str = "id, title, created_at, summary, status, duration_ms, audio_dir, transcript_model";
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct Meeting {
     pub id: i64,
     pub title: String,
     pub created_at: i64,
-    pub transcript: String,
     pub summary: String,
     pub status: String,
     pub duration_ms: i64,
     pub audio_dir: String,
+    /// Manifest id of the model that produced the transcript ("" if none yet).
+    pub transcript_model: String,
 }
 
 pub struct Db {
@@ -138,6 +151,42 @@ impl Db {
         self.get_meeting(id)
     }
 
+    /// Replace the whole transcript (used after transcribing a finished recording).
+    pub fn replace_transcript(&self, id: i64, model_id: &str, segments: &[TranscriptSegment]) -> Result<()> {
+        self.get_meeting(id)?;
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute("DELETE FROM transcript_segments WHERE meeting_id = ?1", params![id])?;
+        for s in segments {
+            tx.execute(
+                "INSERT INTO transcript_segments (meeting_id, start_ms, end_ms, text) VALUES (?1, ?2, ?3, ?4)",
+                params![id, s.start_ms, s.end_ms, s.text],
+            )?;
+        }
+        tx.execute("UPDATE meetings SET transcript_model = ?1 WHERE id = ?2", params![model_id, id])?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Append one segment (live transcription).
+    pub fn append_transcript_segment(&self, id: i64, model_id: &str, s: &TranscriptSegment) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO transcript_segments (meeting_id, start_ms, end_ms, text) VALUES (?1, ?2, ?3, ?4)",
+            params![id, s.start_ms, s.end_ms, s.text],
+        )?;
+        self.conn.execute("UPDATE meetings SET transcript_model = ?1 WHERE id = ?2", params![model_id, id])?;
+        Ok(())
+    }
+
+    pub fn get_transcript(&self, id: i64) -> Result<Vec<TranscriptSegment>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT start_ms, end_ms, text FROM transcript_segments WHERE meeting_id = ?1 ORDER BY start_ms, id",
+        )?;
+        let rows = stmt.query_map(params![id], |r| {
+            Ok(TranscriptSegment { start_ms: r.get(0)?, end_ms: r.get(1)?, text: r.get(2)? })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
     /// Deletes the meeting and its audio files (NFR-02).
     pub fn delete_meeting(&self, id: i64) -> Result<()> {
         let m = self.get_meeting(id)?;
@@ -213,11 +262,11 @@ fn row_to_meeting(r: &rusqlite::Row<'_>) -> rusqlite::Result<Meeting> {
         id: r.get(0)?,
         title: r.get(1)?,
         created_at: r.get(2)?,
-        transcript: r.get(3)?,
-        summary: r.get(4)?,
-        status: r.get(5)?,
-        duration_ms: r.get(6)?,
-        audio_dir: r.get(7)?,
+        summary: r.get(3)?,
+        status: r.get(4)?,
+        duration_ms: r.get(5)?,
+        audio_dir: r.get(6)?,
+        transcript_model: r.get(7)?,
     })
 }
 
@@ -331,5 +380,23 @@ mod tests {
         let m2 = db.start_recording_meeting(None, &root).unwrap();
         assert!(db.begin_recording(m2.id, &root).is_err());
         std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn transcript_roundtrip_and_cascade_delete() {
+        let db = Db::open_in_memory().unwrap();
+        let m = db.create_meeting(Some("T")).unwrap();
+        let seg = |a, b, t: &str| TranscriptSegment { start_ms: a, end_ms: b, text: t.into() };
+        db.replace_transcript(m.id, "whisper-base.en", &[seg(2000, 3000, "second"), seg(0, 1000, "first")]).unwrap();
+        let t = db.get_transcript(m.id).unwrap();
+        assert_eq!(t.iter().map(|s| s.text.as_str()).collect::<Vec<_>>(), ["first", "second"]);
+        assert_eq!(db.get_meeting(m.id).unwrap().transcript_model, "whisper-base.en");
+        // replacing overwrites
+        db.replace_transcript(m.id, "whisper-tiny.en", &[seg(0, 1, "only")]).unwrap();
+        assert_eq!(db.get_transcript(m.id).unwrap().len(), 1);
+        db.append_transcript_segment(m.id, "whisper-tiny.en", &seg(5, 6, "more")).unwrap();
+        assert_eq!(db.get_transcript(m.id).unwrap().len(), 2);
+        db.delete_meeting(m.id).unwrap();
+        assert!(db.get_transcript(m.id).unwrap().is_empty());
     }
 }

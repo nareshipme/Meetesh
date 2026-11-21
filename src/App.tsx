@@ -1,17 +1,21 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, Meeting } from "./api";
+import ModelPanel from "./ModelPanel";
 import Recorder from "./Recorder";
+import Transcript from "./Transcript";
 
 export default function App() {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [recordingId, setRecordingId] = useState<number | null>(null);
+  const [modelReady, setModelReady] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
       setMeetings(await api.listMeetings());
       setRecordingId(await api.activeRecording());
+      setModelReady((await api.listModels()).some((m) => m.is_default && m.installed));
     } catch (e) {
       setError(String(e));
     }
@@ -69,6 +73,7 @@ export default function App() {
           ))}
         </ul>
         {meetings.length === 0 && <p className="muted">No meetings yet.</p>}
+        <ModelPanel onChange={refresh} />
       </aside>
 
       <main className={selected ? "main" : "main hide-on-mobile"}>
@@ -94,6 +99,13 @@ export default function App() {
               recording={recordingId === selected.id}
               onChange={refresh}
               onError={setError}
+            />
+            <Transcript
+              meeting={selected}
+              modelReady={modelReady}
+              recording={recordingId === selected.id}
+              onError={setError}
+              onChange={refresh}
             />
             <button onClick={() => remove(selected)} disabled={recordingId === selected.id}>
               Delete
