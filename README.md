@@ -1,50 +1,117 @@
 # Meetesh
 
-A private, fully local meeting assistant: records, transcribes, and gives you live hints during the meeting. Nothing leaves your machine.
+**A private, local-first AI meeting assistant.** Record a meeting, get a transcript as you go, and (soon) quiet hints during the conversation. All on your own machine, with no account and no cloud.
 
-Status: **Slices 0 to 3 done**: microphone recording (crash-safe segments), local transcription with Whisper,
-a manifest-driven model downloader, and live transcription while you record. Live assist hints, summaries,
-search/export, system audio and packaging come next (see the plan in Notion).
+[![CI](https://github.com/nareshipme/Meetesh/actions/workflows/ci.yml/badge.svg)](https://github.com/nareshipme/Meetesh/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## Layout
-```
-crates/meetesh-core/   platform-neutral Rust core (storage now; models, assist logic later). No desktop-only deps.
-src-tauri/             desktop shell: thin Tauri commands over the core
-src/                   React + TypeScript frontend (all invoke() calls live in src/api.ts)
-prototype-web/         the earlier Python/browser prototype, kept for reference
-```
+> **Status: early, pre-alpha.** The core recording and transcription loop works, but it has only been tested on Linux with synthetic audio. Expect rough edges. Contributions and bug reports are very welcome.
 
-## Develop
-Prerequisites: Rust, Node 20+, and the [Tauri system dependencies](https://tauri.app/start/prerequisites/) (on Ubuntu: `libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev`).
+The name comes from *ishara* (इशारा), Hindi/Urdu for a quiet hint or signal, like a glance across the table.
+
+## Why Meetesh
+
+- **Private by design.** Audio and transcripts stay on your device. After the one-time model download, the app works fully offline. Nothing is uploaded.
+- **Local models.** Speech recognition runs on-device with [whisper.cpp](https://github.com/ggml-org/whisper.cpp). No API keys needed.
+- **Light and native.** Built with [Tauri](https://tauri.app) and Rust, not Electron.
+- **Swappable models.** Models are listed in a manifest, not hard-coded, so improving or replacing one is a data change.
+- **Open source (MIT).** Read it, fork it, improve it.
+
+## What works today
+
+| Feature | State |
+|---|---|
+| Record from the microphone, saved as crash-safe segments (about 1 s of audio at risk after a crash) | Working |
+| Recover interrupted recordings on next launch | Working |
+| Local transcription of a finished recording (Whisper) with timestamps | Working |
+| Live transcription while recording (text a few seconds behind speech) | Working |
+| Manifest-driven model download with resume, progress, cancel and checksum | Working |
+| Meetings list, rename, delete (audio is deleted with the meeting), WAV export | Working |
+| Responsive, dark-mode-aware UI | Working |
+
+## Roadmap
+
+| | Planned |
+|---|---|
+| Next | **Local live assist**: short hints during the meeting from a small on-device LLM (no Ollama needed, model downloaded on demand) |
+| Then | AI summaries (local via Ollama, or Claude with your own key), search, Markdown export |
+| Then | System-audio capture so other participants are transcribed (per OS: WASAPI loopback, ScreenCaptureKit, PipeWire/PulseAudio) |
+| Then | Settings and onboarding, signed installers and auto-update |
+| Later | Mobile companion app, speaker labels, audio-file import |
+
+## Limitations
+
+- Microphone only. It cannot yet capture the other side of a call.
+- English-only speech models are bundled in the manifest for now.
+- One recording per meeting.
+- Whisper can mishear words, especially with noise or accents. The transcript is editable data, not ground truth.
+- Tested only on Linux so far. Windows and macOS builds are expected to work but are unverified.
+
+## Quick start
+
+You need Rust, Node 20+, a C/C++ toolchain with `cmake` and clang (Whisper compiles from source on the first build), and the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your OS.
 
 ```bash
+git clone https://github.com/nareshipme/Meetesh.git
+cd Meetesh
 npm install
 npm run tauri dev
 ```
 
-## Test
-```bash
-cargo test --workspace
+The first build takes several minutes. Then in the app:
+1. Download the speech model from the sidebar (about 148 MB, once).
+2. Create a meeting and click **Record**. Your OS may ask for microphone permission.
+3. Talk. Live text appears as you speak. Click **Stop** when done.
+
+See [TESTING.md](TESTING.md) for a full manual test checklist.
+
+## How it works
+
 ```
-Tests that run a real speech model are opt-in (they need a downloaded model):
+mic (cpal) ─> resample to 16 kHz mono ─┬─> segmented WAV on disk   (crash-safe)
+                                       ├─> level meter
+                                       └─> VAD chunker ─> bounded queue ─> Whisper worker ─> transcript (SQLite) ─> UI
+```
+
+- The audio callback never blocks. Slow transcription drops live chunks (counted) instead of slowing capture, and a full pass over the saved audio fills any gaps after you stop.
+- Everything that does not depend on the operating system lives in a platform-neutral Rust crate, so other front ends (and later a mobile app) can reuse it.
+
+```
+crates/meetesh-core/   platform-neutral core: storage, audio pipeline, ASR, model manager (no desktop-only deps)
+src-tauri/             desktop shell: microphone capture and thin Tauri commands over the core
+src/                   React + TypeScript UI (all backend calls go through src/api.ts)
+prototype-web/         the original Python/browser prototype, kept for reference
+```
+
+Models are described in [`crates/meetesh-core/manifest.json`](crates/meetesh-core/manifest.json): id, URL, SHA-256, size, license and per-device defaults.
+
+## Development
+
+```bash
+cargo test --workspace      # unit and end-to-end tests, no hardware or models needed
+```
+
+Tests that run a real speech model are opt-in:
+
 ```bash
 MEETESH_TEST_MODEL=/path/to/ggml-tiny.en.bin \
   cargo test -p meetesh-core --features whisper --test whisper_fixture --test whisper_live -- --nocapture
 ```
 
-## Models
-Models are listed in `crates/meetesh-core/manifest.json` (id, URL, SHA-256, size, license, per-device defaults).
-The app downloads the default speech model on first use, with resume and checksum verification. To change a
-model, edit the manifest; no logic names a model.
-
-## Build installers
 ```bash
-npm run tauri build
+npm run tauri build         # installers for the OS you build on
 ```
-Installers are produced for the OS you build on; CI builds all three.
 
-## Rules of the road
-- Business logic goes in `meetesh-core`, never in `src-tauri` (so a mobile shell can reuse it).
-- Models are configuration (a manifest), not code. No model names hard-coded in logic.
-- Never log transcript content.
-- The app identifier `app.meetesh.desktop` in `src-tauri/tauri.conf.json` is hard to change after release: confirm it before shipping.
+## Contributing
+
+Issues, ideas and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first. Good places to start: testing on Windows or macOS, accuracy and latency reports with different microphones, and anything under "Roadmap".
+
+## Privacy and recording consent
+
+Meetesh does not send audio or transcripts anywhere. The only network access is downloading models you ask for (and, once added, an optional summary provider you choose). The app shows a consent reminder before each recording, but **you are responsible for following the recording laws and meeting etiquette that apply to you**. Many places require everyone's consent.
+
+## License
+
+[MIT](LICENSE) © Meetesh contributors.
+
+Speech recognition uses [whisper.cpp](https://github.com/ggml-org/whisper.cpp) (MIT) and OpenAI Whisper model weights (MIT), downloaded on demand. Built with [Tauri](https://tauri.app), [cpal](https://github.com/RustAudio/cpal) and [rusqlite](https://github.com/rusqlite/rusqlite). Inspired by Meetily, the open-source meeting assistant.

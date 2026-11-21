@@ -2,6 +2,8 @@
 name = "meetesh-core"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+repository = "https://github.com/nareshipme/Meetesh"
 description = "Platform-neutral core for Meetesh: storage, models and logic. No desktop-only dependencies (NFR-22)."
 
 [dependencies]

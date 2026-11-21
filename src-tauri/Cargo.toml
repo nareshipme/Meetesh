@@ -2,6 +2,8 @@
 name = "meetesh"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+repository = "https://github.com/nareshipme/Meetesh"
 
 [lib]
 name = "meetesh_lib"
