@@ -66,16 +66,24 @@ jobs:
   # loader start on a machine with no GPU? Informational for now (it decides whether Vulkan can become the
   # default on Windows), so it may fail without failing the workflow.
   windows-vulkan:
-    # windows-latest has Visual Studio 18 and CMake 4.5; the first two runs there failed inside llama.cpp's
-    # vulkan-shaders-gen sub-build ("CMake error: Not a file: ...cmake_install.cmake", "cannot find the batch
-    # label specified - VCEnd"), with the default and with a short target folder, so it is not a path-length
-    # problem. llama.cpp's own Windows Vulkan CI uses VS 2022, so try that.
+    # Three runs have now failed the same way inside llama.cpp's vulkan-shaders-gen sub-build with the Visual
+    # Studio generator: "CMake error: Not a file: ...cmake_install.cmake" and "cannot find the batch label
+    # specified - VCEnd". It happens on windows-latest (VS 18, CMake 4.5) and on windows-2022 (VS 2022), with the
+    # default and with a short target folder, so it is neither the VS version nor the 260-character path limit.
+    # The SDK itself is fine (glslc found, CMake "Found Vulkan", vulkan-1.dll present on the runner). This run
+    # tries the Ninja generator instead of MSBuild.
     runs-on: windows-2022
     continue-on-error: true
+    env:
+      CMAKE_GENERATOR: Ninja
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ninja
+      # Ninja needs the Visual C++ compiler environment (cl.exe on PATH).
+      - uses: ilammy/msvc-dev-cmd@v1.13.0
       - name: Install the Vulkan SDK
         shell: pwsh
         run: |
@@ -86,6 +94,7 @@ jobs:
           Write-Host "Vulkan SDK at $sdk"
           & "$sdk\Bin\glslc.exe" --version
           Write-Host "vulkan-1.dll (the loader) present in System32: $(Test-Path C:\Windows\System32\vulkan-1.dll)"
+          Get-Command ninja
       - run: cargo build -p meetesh-core --features vulkan --example gpu_probe
       - name: Run the probe (no GPU here, so it should report a clean failure, not crash at startup)
         run: cargo run -p meetesh-core --features vulkan --example gpu_probe
