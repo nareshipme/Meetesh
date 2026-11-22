@@ -4,6 +4,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use meetesh_core::assist::summary::{summarize, SummaryRun};
+use meetesh_core::assist::title::generate_title;
+use meetesh_core::db::title_source;
 use meetesh_core::assist::Assistant;
 use meetesh_core::{Error, Result};
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -105,6 +107,20 @@ fn start_summary(app: &AppHandle, meeting_id: i64) -> Result<()> {
             let summary = summarize(assistant.as_ref(), &segments, &meeting.agenda, &run, |d, t| emit(d, t, false, false, None))?;
             let md = summary.to_markdown();
             st.db.lock().unwrap().set_summary(meeting_id, &md, assistant.model_id())?;
+            // A short title from the notes, unless the user has named the meeting themselves.
+            // Best effort: the notes are already saved, so a failure here changes nothing else.
+            let user_named = st.db.lock().unwrap().get_meeting(meeting_id)?.title_source == title_source::USER;
+            if !user_named {
+                match generate_title(assistant.as_ref(), &md, cancel.clone()) {
+                    Ok(Some(t)) => match st.db.lock().unwrap().set_model_title(meeting_id, &t) {
+                        Ok(Some(_)) => log::info!("title for meeting {meeting_id} written by the model ({} chars)", t.chars().count()),
+                        Ok(None) => {} // the user renamed it in the meantime
+                        Err(e) => log::warn!("could not save the title: {e}"),
+                    },
+                    Ok(None) => log::info!("the model gave no usable title for meeting {meeting_id}"),
+                    Err(e) => log::info!("no title for meeting {meeting_id}: {e}"),
+                }
+            }
             Ok(md)
         })();
         *st.summary_job.lock().unwrap() = None;

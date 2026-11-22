@@ -49,7 +49,19 @@ const MIGRATIONS: &[&str] = &[
      ALTER TABLE transcript_segments ADD COLUMN source TEXT NOT NULL DEFAULT 'mic';",
     // 7: which model wrote the summary (the summary text itself has been a column since migration 1)
     "ALTER TABLE meetings ADD COLUMN summary_model TEXT NOT NULL DEFAULT '';",
+    // 8: who chose the title: 'default' (the date placeholder), 'model' (written by the assistant)
+    //    or 'user'. Only the first two may be replaced automatically.
+    "ALTER TABLE meetings ADD COLUMN title_source TEXT NOT NULL DEFAULT 'default';
+     UPDATE meetings SET title_source = 'user'
+      WHERE NOT (title GLOB 'Meeting [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]');",
 ];
+
+/// Values of `Meeting::title_source`.
+pub mod title_source {
+    pub const DEFAULT: &str = "default";
+    pub const MODEL: &str = "model";
+    pub const USER: &str = "user";
+}
 
 /// `recording`: audio is being captured. `stopped`: finished normally.
 /// `recovered`: the app died mid-recording; audio on disk was kept.
@@ -59,7 +71,7 @@ pub mod status {
     pub const RECOVERED: &str = "recovered";
 }
 
-const COLS: &str = "id, title, created_at, summary, status, duration_ms, audio_dir, transcript_model, agenda, has_system_audio, summary_model";
+const COLS: &str = "id, title, created_at, summary, status, duration_ms, audio_dir, transcript_model, agenda, has_system_audio, summary_model, title_source";
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct Meeting {
@@ -79,6 +91,8 @@ pub struct Meeting {
     pub has_system_audio: bool,
     /// Manifest id of the model that wrote `summary` ("" if none yet).
     pub summary_model: String,
+    /// Who chose the title: "default" (date placeholder), "model" or "user". See `title_source`.
+    pub title_source: String,
 }
 
 pub struct Db {
@@ -130,6 +144,7 @@ impl Db {
     /// Create a meeting. An empty title becomes "Meeting YYYY-MM-DD HH:MM" in local time.
     pub fn create_meeting(&self, title: Option<&str>) -> Result<Meeting> {
         let ts = now();
+        let given = title.map_or(false, |t| !t.trim().is_empty());
         let title = match title.map(str::trim) {
             Some(t) if !t.is_empty() => t.to_string(),
             _ => self.conn.query_row(
@@ -138,9 +153,10 @@ impl Db {
                 |r| r.get::<_, String>(0),
             )?,
         };
+        let source = if given { title_source::USER } else { title_source::DEFAULT };
         self.conn.execute(
-            "INSERT INTO meetings (title, created_at) VALUES (?1, ?2)",
-            params![title, ts],
+            "INSERT INTO meetings (title, created_at, title_source) VALUES (?1, ?2, ?3)",
+            params![title, ts, source],
         )?;
         self.get_meeting(self.conn.last_insert_rowid())
     }
@@ -168,11 +184,30 @@ impl Db {
     pub fn rename_meeting(&self, id: i64, title: &str) -> Result<Meeting> {
         let n = self
             .conn
-            .execute("UPDATE meetings SET title = ?1 WHERE id = ?2", params![title, id])?;
+            .execute("UPDATE meetings SET title = ?1, title_source = ?2 WHERE id = ?3", params![title, title_source::USER, id])?;
         if n == 0 {
             return Err(Error::NotFound(id));
         }
         self.get_meeting(id)
+    }
+
+    /// Set a title written by the assistant. A title the user chose is never replaced: returns
+    /// `Ok(None)` and changes nothing in that case (decided in one statement, so a rename that
+    /// happens at the same moment wins).
+    pub fn set_model_title(&self, id: i64, title: &str) -> Result<Option<Meeting>> {
+        let title = title.trim();
+        if title.is_empty() {
+            return Ok(None);
+        }
+        let n = self.conn.execute(
+            "UPDATE meetings SET title = ?1, title_source = ?2 WHERE id = ?3 AND title_source != ?4",
+            params![title, title_source::MODEL, id, title_source::USER],
+        )?;
+        if n == 0 {
+            self.get_meeting(id)?; // NotFound if there is no such meeting
+            return Ok(None);
+        }
+        Ok(Some(self.get_meeting(id)?))
     }
 
     /// Replace the whole transcript (used after transcribing a finished recording).
@@ -325,6 +360,7 @@ fn row_to_meeting(r: &rusqlite::Row<'_>) -> rusqlite::Result<Meeting> {
         agenda: r.get(8)?,
         has_system_audio: r.get::<_, i64>(9)? != 0,
         summary_model: r.get(10)?,
+        title_source: r.get(11)?,
     })
 }
 
@@ -552,5 +588,53 @@ mod tests {
         let m = db.set_summary(m.id, "", "gemma").unwrap();
         assert_eq!((m.summary.as_str(), m.summary_model.as_str()), ("", ""), "clearing forgets the model too");
         assert!(matches!(db.set_summary(999, "x", "m"), Err(Error::NotFound(999))));
+    }
+
+    #[test]
+    fn a_title_the_user_chose_is_never_replaced_automatically() {
+        let db = Db::open_in_memory().unwrap();
+        // Placeholder title: the model may set it, and replace its own title later.
+        let m = db.create_meeting(None).unwrap();
+        assert_eq!(m.title_source, "default");
+        let m = db.set_model_title(m.id, "  Launch date for onboarding  ").unwrap().unwrap();
+        assert_eq!((m.title.as_str(), m.title_source.as_str()), ("Launch date for onboarding", "model"));
+        let m = db.set_model_title(m.id, "Onboarding launch plan").unwrap().unwrap();
+        assert_eq!(m.title, "Onboarding launch plan");
+        // The user renames it: from now on the model stays out.
+        let m = db.rename_meeting(m.id, "My title").unwrap();
+        assert_eq!(m.title_source, "user");
+        assert!(db.set_model_title(m.id, "Something else").unwrap().is_none());
+        assert_eq!(db.get_meeting(m.id).unwrap().title, "My title");
+        // A title given at creation is the user's too.
+        let named = db.create_meeting(Some("Standup")).unwrap();
+        assert_eq!(named.title_source, "user");
+        assert!(db.set_model_title(named.id, "x").unwrap().is_none());
+        // Blank suggestions and unknown meetings.
+        let d = db.create_meeting(None).unwrap();
+        assert!(db.set_model_title(d.id, "   ").unwrap().is_none());
+        assert!(matches!(db.set_model_title(999, "x"), Err(Error::NotFound(999))));
+    }
+
+    #[test]
+    fn upgrading_from_schema_7_marks_existing_custom_titles_as_the_users() {
+        let path = std::env::temp_dir().join(format!("meetesh-v7-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        {
+            let conn = Connection::open(&path).unwrap();
+            for sql in &MIGRATIONS[..7] {
+                conn.execute_batch(sql).unwrap();
+            }
+            conn.pragma_update(None, "user_version", 7u32).unwrap();
+            for t in ["Meeting 2026-11-21 21:59", "Quarterly planning", "Meeting with Sam"] {
+                conn.execute("INSERT INTO meetings (title, created_at) VALUES (?1, 1)", [t]).unwrap();
+            }
+        }
+        let db = Db::open(&path).unwrap();
+        let by_title = |t: &str| db.list_meetings().unwrap().into_iter().find(|m| m.title == t).unwrap().title_source;
+        assert_eq!(by_title("Meeting 2026-11-21 21:59"), "default", "an untouched placeholder may be replaced");
+        assert_eq!(by_title("Quarterly planning"), "user");
+        assert_eq!(by_title("Meeting with Sam"), "user", "only the exact date placeholder counts as untouched");
+        drop(db);
+        std::fs::remove_file(path).ok();
     }
 }
