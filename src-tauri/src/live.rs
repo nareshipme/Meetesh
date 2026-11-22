@@ -15,7 +15,8 @@ use crate::state::{get_transcriber, AppState};
 /// pushed to the UI. Never logs transcript text.
 pub fn live_sink(app: &AppHandle, meeting_id: i64, model_id: String, outcome: Arc<Mutex<LiveSettle>>) -> LiveTranscriber {
     let (load_app, seg_app, done_app) = (app.clone(), app.clone(), app.clone());
-    LiveTranscriber::start(
+    let pending = app.state::<AppState>().asr_pending.clone();
+    LiveTranscriber::start_with_load(
         live_chunker_config(),
         8,
         Box::new(move || Ok(get_transcriber(&load_app)? as Arc<dyn Transcriber>)),
@@ -46,6 +47,7 @@ pub fn live_sink(app: &AppHandle, meeting_id: i64, model_id: String, outcome: Ar
                 finish_live(&done_app, meeting_id, report);
             }
         },
+        pending,
     )
 }
 

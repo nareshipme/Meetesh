@@ -128,7 +128,7 @@ impl LlamaAssistant {
     /// weights, and settles GPU-versus-CPU (falling back to CPU now if the GPU path is broken).
     pub fn warm_up(&self) -> Result<GenStats> {
         let msgs = [ChatMessage::new(ChatRole::User, "Reply with one word: ready")];
-        let opts = GenOptions { max_tokens: 1, temperature: 0.0, cancel: Arc::new(AtomicBool::new(false)) };
+        let opts = GenOptions { max_tokens: 1, temperature: 0.0, ..GenOptions::hint(Arc::new(AtomicBool::new(false))) };
         Ok(self.complete(&msgs, &opts, &mut |_| true)?.stats)
     }
 
@@ -237,6 +237,10 @@ impl LlamaAssistant {
         };
 
         let n_batch = 512u32;
+        // When yielding to transcription, feed the prompt in small steps so there are frequent
+        // points at which to pause (a single big step would hog the processor for seconds).
+        let prefill_step = if opts.yield_to.is_some() { 32 } else { n_batch as usize };
+        let mut yielded_ms = 0u64;
         let params = LlamaContextParams::default()
             .with_n_ctx(NonZeroU32::new(self.n_ctx))
             .with_n_batch(n_batch)
@@ -247,7 +251,8 @@ impl LlamaAssistant {
         // Feed the prompt in batches; only the final token needs logits.
         let mut batch = LlamaBatch::new(n_batch as usize, 1);
         let last = tokens.len() - 1;
-        for (start, chunk) in tokens.chunks(n_batch as usize).enumerate().map(|(i, c)| (i * n_batch as usize, c)) {
+        for (start, chunk) in tokens.chunks(prefill_step).enumerate().map(|(i, c)| (i * prefill_step, c)) {
+            yielded_ms += opts.wait_while_busy();
             batch.clear();
             for (j, &tok) in chunk.iter().enumerate() {
                 let pos = start + j;
@@ -258,7 +263,7 @@ impl LlamaAssistant {
             if opts.cancel.load(Ordering::Relaxed) {
                 return Ok(Completion {
                     text: String::new(),
-                    stats: GenStats { prompt_tokens: tokens.len(), total_ms: started.elapsed().as_millis() as u64, cancelled: true, on_gpu: gpu, ..Default::default() },
+                    stats: GenStats { prompt_tokens: tokens.len(), total_ms: started.elapsed().as_millis() as u64, cancelled: true, on_gpu: gpu, yielded_ms, ..Default::default() },
                 });
             }
         }
@@ -306,8 +311,10 @@ impl LlamaAssistant {
             batch.add(tok, pos, &[0], true).map_err(|e| lerr("batch", e))?;
             pos += 1;
             logits_idx = 0;
+            yielded_ms += opts.wait_while_busy();
             ctx.decode(&mut batch).map_err(decode_err)?;
         }
+        stats.yielded_ms = yielded_ms;
         stats.total_ms = started.elapsed().as_millis() as u64;
         Ok(Completion { text, stats })
     }

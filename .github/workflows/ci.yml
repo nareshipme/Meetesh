@@ -89,4 +89,4 @@ jobs:
       - name: Real-model tests
         run: |
           MEETESH_TEST_ASSIST_MODEL=$PWD/gemma.gguf MEETESH_TEST_MODEL=$PWD/ggml-tiny.en.bin \
-            cargo test -p meetesh-core --features "whisper llm" --test llm_hint --test whisper_and_llm -- --nocapture
+            cargo test -p meetesh-core --features "whisper llm" --test llm_hint --test whisper_and_llm --test hint_vs_live -- --nocapture

@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{Arc, Mutex};
 
 use meetesh_core::asr::live::LiveSettle;
@@ -50,6 +50,9 @@ pub struct AppState {
     /// Loaded assist model (about 4 GB in memory). Loaded on the first hint, kept afterwards.
     pub assistant: Mutex<Option<Arc<LlamaAssistant>>>,
     pub hint_job: Mutex<Option<HintJob>>,
+    /// Live transcription chunks queued or in progress. Hint generation yields while this is above
+    /// zero, so a hint never makes the live transcript lag.
+    pub asr_pending: Arc<AtomicUsize>,
     /// Latest load state per model id, so the UI can sync after a reload.
     pub runtime: Mutex<HashMap<String, ModelLoadEvent>>,
     pub download_cancel: Arc<AtomicBool>,
@@ -77,6 +80,7 @@ impl AppState {
             job: Mutex::new(None),
             assistant: Mutex::new(None),
             hint_job: Mutex::new(None),
+            asr_pending: Arc::new(AtomicUsize::new(0)),
             runtime: Mutex::new(HashMap::new()),
             download_cancel: Arc::new(AtomicBool::new(false)),
             downloading: Mutex::new(false),
