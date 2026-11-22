@@ -45,7 +45,9 @@ These show the interface running against the built-in sample-data backend (see [
 | Model downloads you can pause, resume, retry or discard, with progress and a SHA-256 check (hashed while downloading, so there is no wait at 100%) | Working |
 | Models load in the background at startup, with a progress bar (real percentage for the live-assist model) and a warm-up, so the first hint is not slow | Working |
 | Live assist: ask for a short hint from the last few minutes (button or Ctrl/Cmd+Shift+H), written by an on-device model (Gemma 4 E2B), streamed into the window and labelled GPU or CPU | Working (manual trigger) |
-| If the GPU cannot run the model, hints automatically fall back to the CPU | Working, but untested on a GPU that fails (simulated in tests) |
+| If the GPU cannot run the model, hints automatically fall back to the CPU, the sidebar says "CPU (GPU failed)", and llama.cpp's own error goes to the log | Working (a GPU failure is simulated in tests) |
+| GPU for live assist: Metal on macOS, opt-in Vulkan on Windows and Linux (see [GPU acceleration](#gpu-acceleration)) | Metal compiles in CI but is failing on at least one Mac ([#3](https://github.com/nareshipme/Meetesh/issues/3)); Vulkan verified with a software Vulkan device only |
+| `gpu_probe` tool that tries the known GPU workarounds and reports which one works | Working (Linux verified) |
 | Optional meeting goals that keep hints on topic | Working |
 | Meetings list, rename, delete (audio is deleted with the meeting), WAV export | Working |
 | Responsive, dark-mode-aware UI | Working |
@@ -66,7 +68,7 @@ Tracked as GitHub issues:
 
 | Issue | Kind |
 |---|---|
-| [#3 GPU is not used for model inference](https://github.com/nareshipme/Meetesh/issues/3) | Bug |
+| [#3 GPU is not used for model inference](https://github.com/nareshipme/Meetesh/issues/3) (diagnostics, log capture and opt-in Vulkan added; the Mac cause still needs a `gpu_probe` run) | Bug |
 | [#4 Missing words in the live transcript: improve audio before transcription](https://github.com/nareshipme/Meetesh/issues/4) | Improvement |
 | [#5 Live transcription lags while a hint is being generated](https://github.com/nareshipme/Meetesh/issues/5) | Bug |
 | [#6 One-click new recording](https://github.com/nareshipme/Meetesh/issues/6) | Improvement |
@@ -77,7 +79,7 @@ Tracked as GitHub issues:
 
 - Hints are requested manually for now.
 - The live-assist model is a 3.1 GB download and, once downloaded, is loaded into memory at every start (about 4 GB). A per-user switch to load it only on demand is planned.
-- Models may run on the CPU even when a GPU is present ([#3](https://github.com/nareshipme/Meetesh/issues/3)). On a CPU-only 4-core Linux machine a hint takes about 6 s.
+- Models may run on the CPU even when a GPU is present ([#3](https://github.com/nareshipme/Meetesh/issues/3)). Speech recognition (Whisper) always runs on the CPU. On a CPU-only 4-core Linux machine a hint takes about 6 s.
 - While a hint is generated, live transcription can lag ([#5](https://github.com/nareshipme/Meetesh/issues/5)).
 - Some words can be missing from the live transcript ([#4](https://github.com/nareshipme/Meetesh/issues/4)).
 - Microphone only. It cannot yet capture the other side of a call.
@@ -87,11 +89,17 @@ Tracked as GitHub issues:
 
 ## Troubleshooting
 
-**"llama decode failed" when asking for a hint.** The GPU could not run the model (this was seen with Metal on macOS). Meetesh now retries on the CPU automatically and labels the hint "CPU (fallback)". If the live-assist row in the sidebar says **"CPU (GPU failed)"**, the GPU path failed while the model warmed up at startup, and the reason is written to the log. To help us find the cause, run the app from a terminal with llama.cpp's own logs switched on and send us the lines around the error, plus your Mac model, chip, macOS version and memory:
+**The live-assist row says "CPU" or "CPU (GPU failed)", or a hint failed with "llama decode failed".** The GPU could not run the model (seen with Metal on macOS). Meetesh falls back to the CPU automatically, and llama.cpp's own error message is written to the log file, so nothing is lost. To find out which GPU setting works on your machine, run the probe. It tries the known workarounds, each in a fresh process, and prints which one works and the real error from the ones that fail:
 
 ```bash
-MEETESH_LLAMA_LOGS=1 npm run tauri dev
+cargo run -p meetesh-core --example gpu_probe --features metal      # macOS
+cargo run -p meetesh-core --example gpu_probe --features vulkan     # Windows / Linux (needs the Vulkan SDK)
 ```
+It looks for the model in the app's models folder; or pass the path as the last argument. Paste the whole output into [#3](https://github.com/nareshipme/Meetesh/issues/3), together with your Mac model, chip, macOS version and memory.
+
+Other switches: `MEETESH_GPU=off` forces the CPU, and `MEETESH_LLAMA_LOGS=1` also writes llama.cpp's routine messages to the log (very chatty).
+
+**Where is the log file?** In the app's log folder, usually `~/Library/Logs/app.meetesh.desktop/` on macOS, `%LOCALAPPDATA%\app.meetesh.desktop\logs` on Windows and `~/.local/share/app.meetesh.desktop/logs` on Linux. The sidebar shows the exact folder when the GPU failed. Logs never contain transcript or audio content.
 
 **A model download is stuck or failed.** Use Pause, Resume, Retry or Discard in the model panel. A paused or failed download keeps what it already has, so Resume continues from there.
 
@@ -116,6 +124,17 @@ The first build takes several minutes: Whisper and llama.cpp compile from source
 3. Talk. Live text appears as you speak. Click **Stop** when done.
 
 See [TESTING.md](TESTING.md) for a full manual test checklist.
+
+## GPU acceleration
+
+Only the live-assist model (llama.cpp) can use the GPU. Speech recognition runs on the CPU on every platform.
+
+| Platform | How |
+|---|---|
+| macOS | Metal is compiled in automatically. If it fails on your Mac the app falls back to the CPU (see Troubleshooting). |
+| Windows, Linux | Opt-in Vulkan (works with NVIDIA, AMD and Intel GPUs). Install the Vulkan SDK first (Windows: LunarG SDK; Ubuntu: `sudo apt install libvulkan-dev glslc spirv-headers`), then run `npm run tauri dev -- --features vulkan`. |
+
+The Vulkan build has been verified to compile, load the model onto a Vulkan device and generate with it on Linux using a software Vulkan driver (so the speed on a real GPU is not yet measured). CUDA is not wired up yet.
 
 ## How it works
 

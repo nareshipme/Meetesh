@@ -123,6 +123,7 @@ export const api = {
   discardDownload: (id: string) => invoke<void>("discard_download", { id }),
   modelRuntime: () => invoke<ModelLoadEvent[]>("model_runtime"),
   retryModelLoad: (id: string) => invoke<void>("retry_model_load", { id }),
+  logDir: () => invoke<string | null>("log_dir"),
   onModelLoad: (cb: (e: ModelLoadEvent) => void) => listen<ModelLoadEvent>("model-load", (e) => cb(e.payload)),
   getTranscript: (id: number) => invoke<TranscriptSegment[]>("get_transcript", { id }),
   transcribeMeeting: (id: number) => invoke<void>("transcribe_meeting", { id }),

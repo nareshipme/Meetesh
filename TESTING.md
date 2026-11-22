@@ -68,6 +68,11 @@ MEETESH_TEST_MODEL=/path/to/ggml-tiny.en.bin \
 - [ ] Right after a download finishes, the model loads without any click.
 - [ ] Note how long loading and warm-up take, and which backend the row reports: "GPU", "CPU", or "CPU (GPU failed)". The last means the GPU path failed at startup; please send the log line "GPU failed while warming up ... (reason)".
 
+**GPU** (needs the live-assist model downloaded)
+- [ ] Note what the live-assist row says: "GPU", "CPU", or "CPU (GPU failed)". If it says "GPU failed", the sidebar shows the log folder: open `Meetesh.log` there and look for lines starting with `llama.cpp` (warnings and errors). Send them along.
+- [ ] Run the GPU probe and send the whole output: `cargo run -p meetesh-core --example gpu_probe --features metal` (macOS), or `--features vulkan` (Windows/Linux, needs the Vulkan SDK).
+- [ ] Windows/Linux with a GPU: run the app with `npm run tauri dev -- --features vulkan` and check the row says "GPU" and hints are faster than on the CPU. Report the time shown on a hint.
+
 **Live assist** (needs the live-assist model)
 - [ ] While recording (or on any meeting that has a transcript), click **✦ Hint** or press Ctrl/Cmd+Shift+H. The first hint is as quick as the later ones, because the model is already loaded. Text streams into a blue panel above the transcript.
 - [ ] The hint is short (one or two sentences), relevant to what was just said, and shows how long it took and "GPU" or "CPU". Dismiss it with ×.

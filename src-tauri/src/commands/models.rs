@@ -131,3 +131,9 @@ pub fn model_runtime(state: State<AppState>) -> Vec<ModelLoadEvent> {
 pub fn retry_model_load(app: AppHandle, id: String) {
     runtime::preload_model(&app, &id);
 }
+
+/// Folder with the app's log file, so the UI can point people at it when something fails.
+#[tauri::command]
+pub fn log_dir(app: AppHandle) -> Option<String> {
+    app.path().app_log_dir().ok().map(|p| p.to_string_lossy().into_owned())
+}
