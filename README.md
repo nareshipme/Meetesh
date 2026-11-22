@@ -21,21 +21,21 @@ The name comes from *ishara* (इशारा), Hindi/Urdu for a quiet hint or s
 
 These show the interface running against the built-in sample-data backend (see [CONTRIBUTING.md](CONTRIBUTING.md)), so the transcript text is sample text, not a real recording.
 
-![A meeting with its transcript and a hint from the on-device model](docs/screenshots/meeting-hint.png)
-*A meeting with meeting goals, the transcript, and a hint streamed from the on-device model.*
+![The live screen while recording](docs/screenshots/live-screen.png)
+*While recording: the transcript on the left (You and Others), live assist on the right with the hint button, automatic hints and the current hint.*
 
-![Recording with live text and a level meter](docs/screenshots/recording-live.png)
-*Recording: live text appears a few seconds behind speech.*
+![The review page after a meeting](docs/screenshots/review-notes.png)
+*After the meeting: tabs for Notes, Transcript and Goals; rarer actions are in the ⋯ menu.*
 
-![A call transcript with You and Others labels](docs/screenshots/transcript-you-others.png)
-*A call: your microphone and the other participants' audio, labelled You and Others.*
+![The transcript tab with You and Others labels](docs/screenshots/review-transcript.png)
+*The transcript of a call: your microphone and the other participants' audio, labelled You and Others.*
 
-![Models loading in the background at startup](docs/screenshots/models-loading.png)
-*Models load in the background at startup, with progress.*
+![The Settings dialog with a model choice per job](docs/screenshots/settings.png)
+*Settings: one model choice for each job (speech, hints, notes), with downloads in the same place.*
 
-<img src="docs/screenshots/narrow-dark.png" alt="The same screen at phone width in dark mode" width="320">
+<img src="docs/screenshots/narrow-live.png" alt="The live screen at phone width" width="260">
 
-*A narrow window in dark mode: one pane at a time.*
+*A narrow window: the assist area moves under the transcript.*
 
 ## What works today
 
@@ -58,10 +58,13 @@ These show the interface running against the built-in sample-data backend (see [
 | One-click recording: **New recording** (Ctrl/Cmd+N) opens the consent notice straight away, so starting is one click plus Enter. The consent reminder is still shown before every recording. The microphone is chosen in the same step and remembered | Working |
 | **System audio: the other participants.** Tick "Also record the other participants" in the consent step and what the computer plays (a call in Zoom, Meet, Teams, a browser) is recorded as a second track, transcribed live next to your microphone, and shown as **You** / **Others**. Hints see who said what. Windows: WASAPI loopback of the default speakers. macOS 13+: ScreenCaptureKit (asks for the Screen & System Audio Recording permission). Linux: not yet. If the second track cannot start, the microphone recording carries on and you are told | Implemented and compiled for Windows and macOS in this environment, tested with synthetic audio; **not yet run on real Windows or macOS hardware** (see [TESTING.md](TESTING.md#system-audio-the-other-participants)) |
 | **Meeting notes**: after a recording stops (or on demand with **✦ Write meeting notes** / **Regenerate**) the on-device model writes a short summary, decisions and action items, saved with the meeting, copyable, with a progress bar and Cancel. Long meetings are summarized in steps (transcript parts become notes, notes become the summary) so they fit the model's 4k context. Starting a new recording cancels a running summary so it never competes with live transcription | Working. Real Gemma 4 E2B on a 4-core CPU, scripted call: 11 lines took 29 s; 176 lines (about 26 minutes of speech, 4 steps) took 222 s, and the notes were faithful. Quality checked on scripted dialogue only, not yet on a real meeting |
-| **Automatic titles** ([#7](https://github.com/nareshipme/Meetesh/issues/7)): once the notes are written, a meeting that still has the date placeholder ("Meeting 2026-11-21 21:59") gets a short title from the model, e.g. "Onboarding flow launch date decision" (about 6 s on a 4-core CPU). A title you typed is never replaced, whether you typed it before or after (it is tracked per meeting, and existing custom titles were marked as yours when you upgrade) | Working |
+| **Readable default titles**: a new meeting is called "Meeting on Sun 22 Nov, 3:45 PM" (the year only when it is not this year) instead of "Meeting 2026-11-22 15:45"; untouched old ones are renamed on upgrade, titles you chose never are | Working |
+| **Automatic titles** ([#7](https://github.com/nareshipme/Meetesh/issues/7)): once the notes are written, a meeting that still has the date placeholder ("Meeting on Sun 22 Nov, 3:45 PM") gets a short title from the model, e.g. "Onboarding flow launch date decision" (about 6 s on a 4-core CPU). A title you typed is never replaced, whether you typed it before or after (it is tracked per meeting, and existing custom titles were marked as yours when you upgrade) | Working |
 | **Search** across everything: titles, notes and transcript lines, as you type (Ctrl/Cmd+K), with the matched words highlighted and up to three places per meeting (a transcript hit shows its timestamp). Every word must appear, each as a prefix ("quarter road" finds "quarterly roadmap"); case and accents are ignored. Built on SQLite FTS5, so it stays on the device; on a synthetic archive of 500 meetings and 200,000 transcript lines, building the index took 0.3 s (once, on upgrade), a search of two common words 80 ms, and saving a live line with the index kept up to date 0.9 ms. Live text is searchable as it arrives | Working |
 | **Markdown export**: **Copy Markdown** or **Export Markdown** (a `.md` file in the app's `exports` folder) with title, date, duration, goals, notes and the transcript (You / Others when both sides were recorded) | Working |
 | Meetings list, rename, delete (audio is deleted with the meeting), WAV export | Working |
+| **A calmer layout**: while recording, a *live screen* (transcript on the left; on the right the hint button, the automatic-hints menu, the current hint and the meeting goals). After recording, a *review page* with tabs **Notes / Transcript / Goals**, and a **⋯** menu for the rarer actions (copy or export Markdown, export audio, re-transcribe, delete). Everything you set up once is in one **Settings** dialog (gear, or Ctrl/Cmd+,). The sidebar is only meetings, search and a one-line model status | Working in the mock-backend UI checks; not yet used on real hardware |
+| **Choose the model for each job** (closes [#8](https://github.com/nareshipme/Meetesh/issues/8)): speech to text (Whisper Tiny, Base, Small compact), hints (Gemma 3 1B, Gemma 4 E2B, Gemma 3 4B) and meeting notes and titles (same as hints, or another model, e.g. a bigger one since it runs in the background). Choices are remembered; a model that is not installed shows its download in the same box; a model nobody uses any more is released from memory | Selection logic unit-tested; see "Model choices" below for what was measured |
 | Responsive, dark-mode-aware UI | Working |
 
 What a person has actually tried on real hardware, and what only has automated checks, is tracked in [docs/VERIFICATION.md](docs/VERIFICATION.md).
@@ -84,7 +87,6 @@ Tracked as GitHub issues:
 |---|---|
 | [#3 GPU is not used for model inference](https://github.com/nareshipme/Meetesh/issues/3) (diagnostics, log capture and opt-in Vulkan added; the Mac cause still needs a `gpu_probe` run) | Bug |
 | [#4 Missing words in the live transcript: improve audio before transcription](https://github.com/nareshipme/Meetesh/issues/4) (quiet-microphone loss fixed in tests; real-speech confirmation and a larger model option still open) | Improvement |
-| [#8 Decide: should users be able to choose their models?](https://github.com/nareshipme/Meetesh/issues/8) | Design question |
 
 ## Limitations
 
@@ -132,7 +134,7 @@ npm run tauri dev
 ```
 
 The first build takes several minutes: Whisper and llama.cpp compile from source, and dependencies are built optimized even in dev builds (so hashing a 3 GB model is fast). Then in the app:
-1. Download the speech model from the sidebar (about 148 MB, once). The optional live-assist model is 3.1 GB. Downloaded models load in the background at every start; the bar at the top shows progress.
+1. Open **Settings** (the gear, or Ctrl/Cmd+,) and download the speech model (Whisper Base, about 148 MB, once). The optional live-assist model (Gemma 4 E2B) is 3.1 GB; a smaller, faster one (Gemma 3 1B, 0.8 GB) is also offered. Downloaded models load in the background at every start; the bar at the top shows progress.
 2. Click **● New recording** (or press Ctrl/Cmd+N) and confirm the consent notice. Your OS may ask for microphone permission.
 3. Talk. Live text appears as you speak. Click **Stop** when done.
 
@@ -157,6 +159,29 @@ npm run tauri:gpu
 CI built it this way in about 8 minutes and a program linked against the Vulkan loader started (the runner has no GPU, so nothing was run on one). **Whether it uses your GPU and how fast is not yet verified**; the live-assist row should say "GPU", and please send the time a hint takes.
 
 The Vulkan build has been verified to compile, load the model onto a Vulkan device and generate with it on Linux using a software Vulkan driver (so the speed on a real GPU is not yet measured). CUDA is not wired up yet.
+
+## Model choices
+
+Each job picks its own model in **Settings**. What we measured on a 4-core CPU with no GPU (Linux sandbox), so you can choose, and so you can compare with your own machine:
+
+**Speech to text.** Mean word error rate over seven synthetic scenarios (clean, quiet, noisy, rushed, trailing off, hum, far microphone; machine-made speech, so absolute numbers are pessimistic and only the comparison matters). Lower is better; "live" is the path used while recording, "whole" is a pass over the finished recording.
+
+| Model | Download | Live | Whole | Time for the bench |
+|---|---|---|---|---|
+| Whisper Tiny (English) | 78 MB | 23.0% | 21.2% | 175 s (includes a first compile) |
+| Whisper Base (English), the default | 148 MB | 18.4% | 14.1% | 288 s |
+| Whisper Base, 5-bit | 60 MB | 21.0% | 15.4% | 261 s (not offered: smaller but not faster) |
+| Whisper Small (English, compact) | 190 MB | 15.4% | 10.4% | 854 s (measured while other work ran, so roughly 2.5 to 3 times Base) |
+
+**Language models** (same scripted 11-line call and 176-line meeting for all):
+
+| Model | Download | Memory | A hint | Notes, short call | Notes, 26 min | Title |
+|---|---|---|---|---|---|---|
+| Gemma 3 1B | 0.8 GB | 0.9 GB | 4.1 to 4.6 s | 19 s | 145 s | 3.5 s |
+| Gemma 4 E2B, the default | 3.1 GB | about 4 GB | about 6 s | 29 s | 222 s | 6.4 s |
+| Gemma 3 4B | 2.5 GB | 3.9 GB | 12.7 to 13.1 s | 46 s | 354 s | 9.7 s |
+
+What the notes looked like: Gemma 4 E2B was faithful to the script; Gemma 3 1B was faster but repeated bullets and put action items under decisions; Gemma 3 4B was well structured but not clearly better than E2B on this script, and slower, so it is offered as an alternative, not as an upgrade. These are single scripted dialogues, not real meetings: treat the quality notes as a first impression. A GPU changes all the speeds.
 
 ### Building a binary to give to other people
 

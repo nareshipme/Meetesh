@@ -44,15 +44,29 @@ The team talked through the plan for Meetesh: live transcription, hints from an 
 - Sam writes the release notes by Thursday
 - Check the transcript on a real call`;
 
+const CATALOG = [
+  { id: "whisper-tiny.en", role: "asr", name: "Whisper Tiny (English)", description: "Fastest, lowest accuracy.", size: 77_704_715, license: "MIT" },
+  { id: "whisper-base.en", role: "asr", name: "Whisper Base (English)", description: "Good balance of speed and accuracy for most laptops.", size: 147_964_211, license: "MIT" },
+  { id: "whisper-small.en-q5_1", role: "asr", name: "Whisper Small (English, compact)", description: "More accurate than Base, about twice as slow.", size: 190_098_681, license: "MIT" },
+  { id: "gemma-3-1b-it", role: "assist", name: "Gemma 3 1B (fast)", description: "About 1.5 times faster and under 1 GB of memory, but hints are more generic.", size: 806_058_272, license: "Gemma terms" },
+  { id: "gemma-4-e2b-it", role: "assist", name: "Gemma 4 E2B", description: "The default: good hints, needs about 4 GB of memory.", size: 3_106_738_272, license: "Apache-2.0" },
+  { id: "gemma-3-4b-it", role: "assist", name: "Gemma 3 4B", description: "Larger and about 2 times slower than Gemma 4 E2B; offered as an alternative.", size: 2_489_894_016, license: "Gemma terms" },
+] as const;
+
 export function installMock(variant: string) {
   let nextId = 3;
   let recordingId: number | null = null;
   let modelInstalled = variant !== "nomodel";
   let assistInstalled = !["nomodel", "noassist", "partial", "dlfail"].includes(variant);
   let hintBusy = false;
+  const extraInstalled = new Set<string>();
+  const sel = { asr: "whisper-base.en", assist: "gemma-4-e2b-it", summary: "" };
+  const isInstalled = (id: string) => (id === "whisper-base.en" ? modelInstalled : id === "gemma-4-e2b-it" ? assistInstalled : extraInstalled.has(id));
+  const selectedId = (slot: "asr" | "assist" | "summary") => (slot === "summary" ? sel.summary || sel.assist : sel[slot]);
+  const currentSelection = () => ({ asr: sel.asr, assist: sel.assist, summary: sel.summary || sel.assist, summary_follows_hints: sel.summary === "" });
   const ASSIST_ID = "gemma-4-e2b-it";
-  const SIZES: Record<string, number> = { "whisper-base.en": 147_964_211, [ASSIST_ID]: 3_106_738_272 };
-  const partial: Record<string, number> = { "whisper-base.en": 0, [ASSIST_ID]: variant === "partial" ? Math.round(3_106_738_272 * 0.42) : 0 };
+  const SIZES: Record<string, number> = Object.fromEntries(CATALOG.map((c) => [c.id, c.size]));
+  const partial: Record<string, number> = Object.fromEntries(CATALOG.map((c) => [c.id, c.id === ASSIST_ID && variant === "partial" ? Math.round(3_106_738_272 * 0.42) : 0]));
   const runtime: Record<string, any> = {};
   let dlTimer: number | undefined;
   let dlFailedOnce = false;
@@ -81,7 +95,7 @@ export function installMock(variant: string) {
       ? []
       : [
           meeting(2, "Weekly product sync", 3600 * 3, { duration_ms: 52_000, title_source: "user", transcript_model: "whisper-base.en", audio_dir: "/tmp/2", has_system_audio: true, summary: SAMPLE_NOTES, summary_model: "gemma-4-e2b-it" }),
-          meeting(1, "Meeting 2026-11-20 16:40", 3600 * 30, { duration_ms: 1_805_000, status: "recovered", audio_dir: "/tmp/1" }),
+          meeting(1, "Meeting on Fri 20 Nov, 4:40 PM", 3600 * 30, { duration_ms: 1_805_000, status: "recovered", audio_dir: "/tmp/1" }),
         ];
   transcripts.set(
     2,
@@ -238,7 +252,7 @@ export function installMock(variant: string) {
         case "list_meetings":
           return meetings.map((m) => ({ ...m })).sort((x, y) => y.id - x.id);
         case "create_meeting": {
-          const m = meeting(nextId++, `Meeting ${new Date().toISOString().slice(0, 16).replace("T", " ")}`, 0);
+          const m = meeting(nextId++, `Meeting on ${new Date().toLocaleDateString("en-US", { weekday: "short", day: "numeric", month: "short" })}, ${new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`, 0);
           meetings.push(m);
           return m;
         }
@@ -306,30 +320,26 @@ export function installMock(variant: string) {
         case "export_audio":
           return "/Users/me/Library/Application Support/app.meetesh.desktop/recordings/2/meeting.wav";
         case "list_models":
-          return [
-            {
-              id: "whisper-base.en",
-              role: "asr",
-              name: "Whisper Base (English)",
-              description: "",
-              size_bytes: 147_964_211,
-              license: "MIT",
-              installed: modelInstalled,
-              partial_bytes: partial["whisper-base.en"],
-              is_default: true,
-            },
-            {
-              id: "gemma-4-e2b-it",
-              role: "assist",
-              name: "Gemma 4 E2B (live assist)",
-              description: "",
-              size_bytes: 3_106_738_272,
-              license: "Apache-2.0",
-              installed: assistInstalled,
-              partial_bytes: partial[ASSIST_ID],
-              is_default: true,
-            },
-          ];
+          return CATALOG.map((c) => ({
+            id: c.id,
+            role: c.role,
+            name: c.name,
+            description: c.description,
+            size_bytes: c.size,
+            license: c.license,
+            installed: isInstalled(c.id),
+            partial_bytes: partial[c.id] ?? 0,
+            is_default: c.id === "whisper-base.en" || c.id === ASSIST_ID,
+            selected_for: (["asr", "assist", "summary"] as const).filter((slot) => selectedId(slot) === c.id),
+          }));
+        case "model_selection":
+          return currentSelection();
+        case "select_model": {
+          if (a.slot === "summary" && a.id === "") sel.summary = "";
+          else sel[a.slot as "asr" | "assist" | "summary"] = a.id;
+          if (a.id && isInstalled(a.id) && a.slot !== "summary") startLoad(a.id);
+          return currentSelection();
+        }
         case "set_agenda":
           find(a.id).agenda = a.agenda;
           return find(a.id);
@@ -350,7 +360,7 @@ export function installMock(variant: string) {
         case "download_model": {
           const id: string = a.id;
           const total = SIZES[id];
-          const step = id === ASSIST_ID ? 90_000_000 : 12_000_000;
+          const step = SIZES[id] > 1e9 ? 90_000_000 : 12_000_000;
           const failAt = variant === "dlfail" && id === ASSIST_ID && !dlFailedOnce ? total * 0.4 : Infinity;
           dlTimer = window.setInterval(() => {
             partial[id] = Math.min(total, partial[id] + step);
@@ -366,7 +376,8 @@ export function installMock(variant: string) {
               window.setTimeout(() => {
                 partial[id] = 0;
                 if (id === ASSIST_ID) assistInstalled = true;
-                else modelInstalled = true;
+                else if (id === "whisper-base.en") modelInstalled = true;
+                else extraInstalled.add(id);
                 emit("model-download", { id, phase: "done", downloaded: total, total, error: null });
                 startLoad(id);
               }, 1500);

@@ -12,6 +12,25 @@ use serde::Serialize;
 use crate::asr::{Source, TranscriptSegment};
 use crate::error::{Error, Result};
 
+/// SQL for the placeholder title of a meeting created at the unix time `$ts` (an SQL expression):
+/// "Meeting on Sun 22 Nov, 3:45 PM" in local time (the year only when it is not this year), with
+/// `$pre` before it and `$post` after it. A macro, because `concat!` needs literals and this text
+/// is used both in a migration (column `created_at`) and when creating a meeting (parameter `?1`).
+macro_rules! human_title_sql {
+    ($pre:literal, $ts:literal, $post:literal) => {
+        concat!(
+            $pre,
+            "'Meeting on ' || substr('SunMonTueWedThuFriSat', CAST(strftime('%w', ", $ts, ",'unixepoch','localtime') AS INTEGER) * 3 + 1, 3) || ' ' || ",
+            "CAST(strftime('%d', ", $ts, ",'unixepoch','localtime') AS INTEGER) || ' ' || ",
+            "substr('JanFebMarAprMayJunJulAugSepOctNovDec', (CAST(strftime('%m', ", $ts, ",'unixepoch','localtime') AS INTEGER) - 1) * 3 + 1, 3) || ",
+            "CASE WHEN strftime('%Y', ", $ts, ",'unixepoch','localtime') = strftime('%Y', 'now', 'localtime') THEN '' ELSE ' ' || strftime('%Y', ", $ts, ",'unixepoch','localtime') END || ', ' || ",
+            "((CAST(strftime('%H', ", $ts, ",'unixepoch','localtime') AS INTEGER) + 11) % 12 + 1) || ':' || strftime('%M', ", $ts, ",'unixepoch','localtime') || ' ' || ",
+            "CASE WHEN CAST(strftime('%H', ", $ts, ",'unixepoch','localtime') AS INTEGER) >= 12 THEN 'PM' ELSE 'AM' END",
+            $post
+        )
+    };
+}
+
 pub(crate) const MIGRATIONS: &[&str] = &[
     // 1: meetings
     "CREATE TABLE meetings (
@@ -78,6 +97,13 @@ pub(crate) const MIGRATIONS: &[&str] = &[
      END;
      INSERT INTO fts_meetings(fts_meetings) VALUES ('rebuild');
      INSERT INTO fts_segments(fts_segments) VALUES ('rebuild');",
+    // 11: a readable placeholder title, "Meeting on Sun 22 Nov, 3:45 PM", instead of "Meeting 2026-11-22 15:45".
+    //     Only titles nobody has changed ('default') and that still have the old date format are rewritten.
+    human_title_sql!(
+        "UPDATE meetings SET title = ",
+        "created_at",
+        " WHERE title_source = 'default' AND title GLOB 'Meeting [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]';"
+    ),
 ];
 
 /// Values of `Meeting::title_source`.
@@ -175,7 +201,7 @@ impl Db {
         let title = match title.map(str::trim) {
             Some(t) if !t.is_empty() => t.to_string(),
             _ => self.conn.query_row(
-                "SELECT 'Meeting ' || strftime('%Y-%m-%d %H:%M', ?1, 'unixepoch', 'localtime')",
+                human_title_sql!("SELECT ", "?1", ""),
                 params![ts],
                 |r| r.get::<_, String>(0),
             )?,
@@ -435,13 +461,23 @@ mod tests {
         assert_eq!(list.iter().map(|m| m.id).collect::<Vec<_>>(), vec![b.id, a.id]);
     }
 
+    /// "Meeting on Sun 22 Nov, 3:45 PM", or with the year when it is not this year.
     fn looks_like_default_title(t: &str) -> bool {
-        // "Meeting 2026-11-21 21:59"
-        let b = t.as_bytes();
-        t.len() == 24
-            && t.starts_with("Meeting ")
-            && b[12] == b'-' && b[15] == b'-' && b[18] == b' ' && b[21] == b':'
-            && t[8..12].chars().all(|c| c.is_ascii_digit())
+        let Some(rest) = t.strip_prefix("Meeting on ") else { return false };
+        let (date, time) = match rest.split_once(", ") {
+            Some(x) => x,
+            None => return false,
+        };
+        let w: Vec<&str> = date.split(' ').collect();
+        let day_ok = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].contains(&w[0]);
+        let month_ok = w.len() >= 3 && ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].contains(&w[2]) && w[1].parse::<u32>().is_ok_and(|d| (1..=31).contains(&d));
+        let year_ok = w.len() == 3 || (w.len() == 4 && w[3].len() == 4 && w[3].parse::<u32>().is_ok());
+        let (hm, ampm) = match time.split_once(' ') {
+            Some(x) => x,
+            None => return false,
+        };
+        let time_ok = hm.split_once(':').is_some_and(|(h, m)| h.parse::<u32>().is_ok_and(|h| (1..=12).contains(&h)) && m.len() == 2 && m.parse::<u32>().is_ok_and(|m| m < 60)) && (ampm == "AM" || ampm == "PM");
+        day_ok && month_ok && year_ok && time_ok
     }
 
     #[test]
@@ -681,8 +717,10 @@ mod tests {
             }
         }
         let db = Db::open(&path).unwrap();
+        let first = db.get_meeting(1).unwrap();
+        assert_eq!(first.title_source, "default", "an untouched placeholder may be replaced");
+        assert!(looks_like_default_title(&first.title), "and it now has the readable form: {}", first.title);
         let by_title = |t: &str| db.list_meetings().unwrap().into_iter().find(|m| m.title == t).unwrap().title_source;
-        assert_eq!(by_title("Meeting 2026-11-21 21:59"), "default", "an untouched placeholder may be replaced");
         assert_eq!(by_title("Quarterly planning"), "user");
         assert_eq!(by_title("Meeting with Sam"), "user", "only the exact date placeholder counts as untouched");
         drop(db);
@@ -698,5 +736,38 @@ mod tests {
         db.set_setting("auto_hints", "off").unwrap();
         assert_eq!(db.get_setting("auto_hints").unwrap().as_deref(), Some("off"));
         assert_eq!(db.get_setting("other").unwrap().as_deref(), Some("x"));
+    }
+
+    #[test]
+    fn upgrading_rewrites_untouched_date_titles_to_the_readable_form_and_nothing_else() {
+        let path = std::env::temp_dir().join(format!("meetesh-v10-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let ts = 1_795_278_543i64;
+        {
+            let conn = Connection::open(&path).unwrap();
+            for sql in &MIGRATIONS[..10] {
+                conn.execute_batch(sql).unwrap();
+            }
+            conn.pragma_update(None, "user_version", 10u32).unwrap();
+            let ins = "INSERT INTO meetings (title, created_at, title_source) VALUES (?1, ?2, ?3)";
+            conn.execute(ins, params!["Meeting 2026-11-22 15:45", ts, "default"]).unwrap(); // untouched placeholder
+            conn.execute(ins, params!["Meeting 2026-11-22 15:45", ts, "user"]).unwrap(); // the user kept that exact text
+            conn.execute(ins, params!["Launch date for onboarding", ts, "model"]).unwrap();
+            conn.execute(ins, params!["Standup", ts, "user"]).unwrap();
+        }
+        let db = Db::open(&path).unwrap();
+        let by_id = |id: i64| db.get_meeting(id).unwrap().title;
+        // What a new meeting created at the same moment would be called.
+        let expected: String = db
+            .conn
+            .query_row(human_title_sql!("SELECT ", "?1", ""), params![ts], |r| r.get(0))
+            .unwrap();
+        assert!(looks_like_default_title(&expected), "{expected}");
+        assert_eq!(by_id(1), expected, "an untouched placeholder is rewritten, to the same text a new meeting gets");
+        assert_eq!(by_id(2), "Meeting 2026-11-22 15:45", "a title the user chose is never rewritten");
+        assert_eq!(by_id(3), "Launch date for onboarding");
+        assert_eq!(by_id(4), "Standup");
+        drop(db);
+        std::fs::remove_file(path).ok();
     }
 }

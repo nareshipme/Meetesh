@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, DownloadPhase, ModelInfo, ModelLoadEvent } from "../api";
+import { api, DownloadPhase, ModelInfo, ModelLoadEvent, ModelSelection, ModelSlot } from "../api";
 import { errorText } from "../lib/format";
 import type { Notify } from "./useToasts";
 
@@ -19,12 +19,14 @@ export function useModels(notify: Notify) {
   const [downloads, setDownloads] = useState<Record<string, Download>>({});
   const [runtime, setRuntime] = useState<Record<string, ModelLoadEvent>>({});
   const [logDir, setLogDir] = useState<string | null>(null);
+  const [selection, setSelection] = useState<ModelSelection | null>(null);
 
   const refresh = useCallback(() => {
     api
       .listModels()
-      .then((ms) => setModels(ms.filter((m) => m.is_default)))
+      .then(setModels)
       .catch((e) => notify("error", errorText(e)));
+    api.modelSelection().then(setSelection).catch(() => {});
   }, [notify]);
 
   useEffect(() => {
@@ -78,9 +80,28 @@ export function useModels(notify: Notify) {
     [notify, refresh],
   );
 
-  const speech = models.find((m) => m.role === "asr");
-  const assist = models.find((m) => m.role === "assist");
+  /** Pick the model for a job. For notes, "" means "same as hints". */
+  const choose = useCallback(
+    async (slot: ModelSlot, id: string) => {
+      try {
+        setSelection(await api.selectModel(slot, id));
+        refresh();
+      } catch (e) {
+        notify("error", errorText(e));
+      }
+    },
+    [notify, refresh],
+  );
+
+  const used = (slot: "asr" | "assist" | "summary") => models.find((m) => m.selected_for.includes(slot));
+  const speech = used("asr");
+  const assist = used("assist");
+  const notes = used("summary");
   return {
+    selection,
+    choose,
+    notesInstalled: notes?.installed ?? false,
+    /** Every model this device can use (all choices, not only the selected ones). */
     models,
     downloads,
     runtime,

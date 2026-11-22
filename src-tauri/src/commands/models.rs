@@ -1,6 +1,7 @@
 use std::sync::atomic::Ordering;
 
 use meetesh_core::models::store::DownloadProgress;
+use meetesh_core::models::selection;
 use meetesh_core::models::Role;
 use meetesh_core::{Error, Result};
 use serde::Serialize;
@@ -13,7 +14,7 @@ use crate::state::{AppState, PROFILE};
 #[derive(Serialize)]
 pub struct ModelInfo {
     id: String,
-    /// "asr" (speech recognition) or "assist" (live hints).
+    /// "asr" (speech recognition) or "assist" (a language model).
     role: Role,
     name: String,
     description: String,
@@ -23,19 +24,42 @@ pub struct ModelInfo {
     /// Bytes already on disk for an unfinished (paused or failed) download.
     partial_bytes: u64,
     is_default: bool,
+    /// Which jobs use this model right now: "asr" (speech), "assist" (hints), "summary" (notes).
+    selected_for: Vec<Role>,
 }
 
+/// The model chosen for each job.
+#[derive(Serialize)]
+pub struct ModelSelection {
+    asr: String,
+    assist: String,
+    /// The model that writes notes (the hints model unless a different one was chosen).
+    summary: String,
+    summary_follows_hints: bool,
+}
+
+fn current_selection(state: &AppState) -> ModelSelection {
+    let id = |slot| state.model_for(slot).map(|m| m.id.clone()).unwrap_or_default();
+    ModelSelection {
+        asr: id(Role::Asr),
+        assist: id(Role::Assist),
+        summary: id(Role::Summary),
+        summary_follows_hints: !state.selection.lock().unwrap().contains_key(&Role::Summary),
+    }
+}
+
+/// Every model this device can use for any job, with what each job currently uses.
 #[tauri::command]
 pub fn list_models(state: State<AppState>) -> Vec<ModelInfo> {
-    // Every model of a role this device has a default for. Roles with no default (e.g. assist on
-    // mobile) are simply not offered.
-    let defaults: Vec<(Role, String)> = [Role::Asr, Role::Assist]
+    let used: Vec<(Role, String)> = [Role::Asr, Role::Assist, Role::Summary]
         .into_iter()
-        .filter_map(|r| state.manifest.default_for(PROFILE, r).map(|m| (r, m.id.clone())))
+        .filter_map(|slot| state.model_for(slot).ok().map(|m| (slot, m.id.clone())))
         .collect();
-    defaults
-        .iter()
-        .flat_map(|(role, _)| state.manifest.by_role(*role))
+    let mut seen = std::collections::HashSet::new();
+    [Role::Asr, Role::Assist]
+        .into_iter()
+        .flat_map(|slot| selection::choices(&state.manifest, PROFILE, slot))
+        .filter(|m| seen.insert(m.id.clone()))
         .map(|m| ModelInfo {
             id: m.id.clone(),
             role: m.role,
@@ -45,9 +69,32 @@ pub fn list_models(state: State<AppState>) -> Vec<ModelInfo> {
             license: m.license.clone(),
             installed: state.models.is_installed(m),
             partial_bytes: state.models.partial_bytes(m),
-            is_default: defaults.iter().any(|(_, id)| id == &m.id),
+            is_default: state.manifest.default_for(PROFILE, m.role).is_some_and(|d| d.id == m.id),
+            selected_for: used.iter().filter(|(_, id)| id == &m.id).map(|(slot, _)| *slot).collect(),
         })
         .collect()
+}
+
+#[tauri::command]
+pub fn model_selection(state: State<AppState>) -> ModelSelection {
+    current_selection(&state)
+}
+
+/// Choose the model for a job ("asr", "assist" or "summary"). For "summary", an empty id means
+/// "same as hints". A chosen model that is installed starts loading right away.
+#[tauri::command]
+pub fn select_model(app: AppHandle, state: State<AppState>, slot: Role, id: String) -> Result<ModelSelection> {
+    state.select_model(slot, &id)?;
+    if slot != Role::Summary {
+        if let Ok(entry) = state.model_for(slot) {
+            if state.models.is_installed(entry) {
+                runtime::preload_model(&app, &entry.id);
+            }
+        }
+    }
+    // Free language models nobody uses any more (not the one a running request still holds).
+    crate::state::release_unused_assistants(&app);
+    Ok(current_selection(&state))
 }
 
 #[tauri::command]
@@ -105,7 +152,7 @@ pub fn delete_model(app: AppHandle, state: State<AppState>, id: String) -> Resul
     let entry = state.manifest.get(&id).ok_or_else(|| Error::Other(format!("Unknown model {id}")))?;
     // Release the loaded models so their files are not held open.
     *state.transcriber.lock().unwrap() = None;
-    *state.assistant.lock().unwrap() = None;
+    state.assistants.lock().unwrap().remove(&entry.id);
     runtime::forget(&app, entry);
     state.models.delete(entry)
 }

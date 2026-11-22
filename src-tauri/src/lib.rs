@@ -54,6 +54,8 @@ pub fn run() {
             recording::stop_recording,
             recording::export_audio,
             models::list_models,
+            models::model_selection,
+            models::select_model,
             models::download_model,
             models::cancel_download,
             models::delete_model,

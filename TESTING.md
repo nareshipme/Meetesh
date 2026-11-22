@@ -29,12 +29,20 @@ MEETESH_TEST_MODEL=/path/to/ggml-tiny.en.bin \
 
 ## 3. Checklist
 
+**Where things are** (the layout changed; older steps below use these names)
+- **Settings** (gear at the top of the sidebar, or Ctrl/Cmd+,): model downloads and choices for the three jobs (speech, hints, notes), automatic hints, log folder. The sidebar footer is one line of status ("Models ready", "Loading models…", "Download a speech model to start") and also opens Settings.
+- **⋯ menu** next to the meeting title: Copy as Markdown, Export Markdown file, Copy transcript, Export audio (WAV), Transcribe / Re-transcribe, Delete meeting…
+- **While recording**: the live screen. Transcript on the left; on the right "Live assist" with the **✦ Hint** button, the automatic-hints menu, the hint itself, and the meeting goals (folded).
+- **After recording**: tabs **Notes | Transcript | Goals**. It opens on Notes when there are notes (and switches to Notes by itself when they start being written, unless you chose a tab).
+- [ ] Look through each of the above once: nothing is missing that you used before, and nothing needed more than two clicks.
+- [ ] Narrow the window to about 360 px: the live screen stacks the assist area under the transcript and nothing scrolls sideways.
+
 **Meetings**
 - [ ] App opens with "No meetings yet." Click **or a meeting for notes only**: an empty meeting appears in the list and is selected, with no consent notice.
 - [ ] Edit the title and click elsewhere: the list updates. Restart the app: the title persisted.
 - [ ] **Delete** asks for confirmation and removes the meeting.
 
-**Speech model** (sidebar)
+**Speech model** (Settings > Models)
 - [ ] Shows "Whisper Base (English)" with **Download** and the size (about 148 MB).
 - [ ] Click Download: the progress bar moves. Click **Pause** part-way, then **Resume**: it continues (check that it does not restart from 0). More cases are under "Model downloads" below.
 - [ ] When finished it says "ready" (with CPU). The file is in the app data folder under `models/`.
@@ -52,15 +60,15 @@ MEETESH_TEST_MODEL=/path/to/ggml-tiny.en.bin \
 - [ ] The sidebar shows a red dot next to the recording meeting. **Delete** is disabled while recording.
 
 **Live transcription** (model installed, while recording)
-- [ ] The Transcript heading shows "● Live".
+- [ ] The Transcript heading on the live screen shows "● Live".
 - [ ] Say a sentence, then pause for about a second: its text appears within a few seconds with a timestamp.
 - [ ] Speak several sentences with pauses: segments appear in order with increasing timestamps.
 - [ ] Talk continuously for 10+ seconds without pausing: text still appears (it is cut about every 6 seconds).
 - [ ] Stay silent for 10 seconds: nothing is invented (no "thank you", no repeated phrases).
 - [ ] Talk long enough for the transcript to fill its box: the view follows the newest line by itself. Scroll up to read earlier text: it stops following and a **↓ Latest** button appears; click it to follow again. Ask for a hint while it is following: the view stays on the newest line.
 
-**Model downloads** (sidebar, bottom left)
-- [ ] The sidebar lists two models (speech, live assist) with their sizes. Start the live-assist download (3.1 GB). The bar and "Downloading N% · x GB of y GB" move.
+**Model downloads** (Settings > Models)
+- [ ] Settings lists three jobs (speech, hints, notes), each with a menu of models and their sizes. Choose Gemma 4 E2B for hints if it is not installed, then start its download (3.1 GB). The bar and "Downloading N% · x GB of y GB" move.
 - [ ] Click **Pause**: it stops at once and says "Paused at N%". Click **Resume**: it continues from that point and does not start over.
 - [ ] Quit the app while paused or mid-download and reopen it: the row shows "Paused at N%" with Resume and Discard.
 - [ ] At 100% it shows "Verifying the download…" for a few seconds at most (not minutes), then the model starts loading by itself.
@@ -74,7 +82,7 @@ MEETESH_TEST_MODEL=/path/to/ggml-tiny.en.bin \
 - [ ] Note how long loading and warm-up take, and which backend the row reports: "GPU", "CPU", or "CPU (GPU failed)". The last means the GPU path failed at startup; please send the log line "GPU failed while warming up ... (reason)".
 
 **GPU** (needs the live-assist model downloaded)
-- [ ] Note what the live-assist row says: "GPU", "CPU", or "CPU (GPU failed)". If it says "GPU failed", the sidebar shows the log folder: open `Meetesh.log` there and look for lines starting with `llama.cpp` (warnings and errors). Send them along.
+- [ ] Note what the live-assist row says: "GPU", "CPU", or "CPU (GPU failed)". If it says "GPU failed", Settings shows the log folder: open `Meetesh.log` there and look for lines starting with `llama.cpp` (warnings and errors). Send them along.
 - [ ] Run the GPU probe and send the whole output: `cargo run -p meetesh-core --example gpu_probe --features metal` (macOS), or `--features vulkan` (Windows/Linux, needs the Vulkan SDK).
 - [ ] Windows/Linux, a normal build (`npm run tauri dev`): the live-assist row says "CPU (no GPU support in this build)" with the command to build with a GPU. That is expected; it is not a failure.
 - [ ] Windows/Linux with a GPU: run the app with `npm run tauri:gpu` (on Windows from an x64 Native Tools Command Prompt for VS, after `set CMAKE_GENERATOR=Ninja`; see the README) and check the row says "GPU" and hints are faster than on the CPU. Report the time shown on a hint.
@@ -84,7 +92,7 @@ MEETESH_TEST_MODEL=/path/to/ggml-tiny.en.bin \
 - [ ] The hint is short (one or two sentences), relevant to what was just said, and shows how long it took and "GPU" or "CPU". Dismiss it with ×.
 - [ ] If the GPU fails, the hint should still appear, labelled "CPU (fallback)". If you see an error such as "llama decode failed", please send the details (see Troubleshooting in the README).
 - [ ] **Stop** while it is writing cancels it cleanly. Asking again right away works.
-- [ ] Open "Meeting goals", type a goal, click elsewhere, and ask for a hint: it should take the goal into account. Restart the app and check the goal was saved.
+- [ ] Open "Meeting goals" in the live assist column (or the Goals tab after recording), type a goal, click elsewhere, and ask for a hint: it should take the goal into account. Restart the app and check the goal was saved.
 - [ ] Ask for a hint repeatedly while you keep talking (live transcription running). The live text must keep up with your speech: it should stay a few seconds behind at most while hints are being generated. A hint may take a little longer to appear while you talk; that is expected, because it lets transcription go first. If live text still lags or the log says chunks were dropped, report it with your Mac model and whether the row says GPU or CPU.
 - [ ] Please report the time shown on a hint, your chip, macOS version, and memory use in Activity Monitor.
 
@@ -99,7 +107,7 @@ MEETESH_TEST_MODEL=/path/to/ggml-tiny.en.bin \
 - [ ] A notes-only meeting (no audio) exports and copies fine.
 
 **Automatic hints** (needs the live-assist model; for questions also system audio, see above)
-- [ ] The menu "Auto hints" above the transcript is off by default. Choose "on questions", restart the app: the choice is remembered.
+- [ ] The menu "Auto hints" in the live assist column (also in Settings > Hints) is off by default. Choose "on questions", restart the app: the choice is remembered.
 - [ ] Record a call with the other participants captured. When someone asks you a question (say it from a video or a colleague), about 2 s after they finish, a hint appears labelled "after a question". If you start answering right away, no hint appears.
 - [ ] Questions you ask yourself (into the microphone) do not trigger a hint.
 - [ ] Two questions in a row within 45 s give one hint, the second is offered after the cooldown.
@@ -119,10 +127,10 @@ MEETESH_TEST_MODEL=/path/to/ggml-tiny.en.bin \
 - [ ] A call recorded with system audio: the notes can tell who said what ("you" versus the others).
 
 **Automatic titles** (needs the live-assist model)
-- [ ] Record a meeting without renaming it. When the notes appear, the title changes from "Meeting <date>" to a short title about what was said (also in the sidebar). Hovering the title says it was written by the model.
+- [ ] Record a meeting without renaming it. When the notes appear, the title changes from "Meeting on Sun 22 Nov, 3:45 PM" (the date and time you recorded) to a short title about what was said (also in the sidebar). Hovering the title says it was written by the model.
 - [ ] Rename a meeting yourself, then **Regenerate** the notes: your title stays.
 - [ ] Start typing a title while the notes are still being written: your text is not replaced when they finish.
-- [ ] Upgrade from an older version with meetings you had renamed: their titles never change. A meeting still named "Meeting <date>" may get a title the next time its notes are written.
+- [ ] Upgrade from an older version with meetings you had renamed: their titles never change. A meeting still named "Meeting <date>" (old style) is renamed to the new style on upgrade ("Meeting on Sun 22 Nov, 3:45 PM"), and may get a title the next time its notes are written.
 
 **Quiet and distant voices** (live transcription)
 - [ ] Speak softly, then speak from about an arm's length or more away from the microphone. Live text should still appear. (Before this change nothing appeared when the level meter stayed in the bottom third.)
@@ -183,3 +191,11 @@ Note your OS, CPU, whether the model was tiny or base, and the relevant log line
 
 ## Known limits right now
 No system audio on Linux, English models only, one recording per meeting, no summaries yet, hints only on request.
+
+## 6. Choosing models
+- [ ] Settings > Models: for each of the three jobs, pick a different model from the menu. A model that is not installed shows a **Download** button in the same box; one that is installed starts loading (see the sidebar footer) and is used for the next hint, note or transcription.
+- [ ] Speech: switch Whisper Base to Whisper Small (compact), download it, record a short test: live text appears and is at least as accurate. Note how much slower it is (the live text should still keep up; if it falls behind the log says chunks were dropped).
+- [ ] Hints: switch to Gemma 3 1B (fast), download it, ask for hints. Note the time shown on a hint and whether the quality is acceptable compared with Gemma 4 E2B.
+- [ ] Notes: choose Gemma 3 4B for notes while hints stay on Gemma 4 E2B. Write notes for a meeting: they are written by the 4B model (the Notes tab says which), and a hint asked during that time still works. Memory use rises while the 4B model is loaded and falls again after the notes are done.
+- [ ] "Same as hints" returns notes to the hints model. Restart the app: all three choices are remembered.
+- [ ] Delete a model that is currently selected: the sidebar status says what is missing, and nothing crashes.

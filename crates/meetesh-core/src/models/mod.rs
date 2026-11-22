@@ -4,6 +4,7 @@
 //! default per role and device profile. Logic asks for "the active ASR model" and never names one.
 //! Changing a default is a manifest edit.
 
+pub mod selection;
 pub mod store;
 
 use std::collections::HashMap;

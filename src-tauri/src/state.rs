@@ -9,6 +9,7 @@ use meetesh_core::asr::live::LiveSettle;
 use meetesh_core::asr::whisper::WhisperTranscriber;
 use meetesh_core::assist::llama::LlamaAssistant;
 use meetesh_core::models::store::ModelStore;
+use meetesh_core::models::selection;
 use meetesh_core::models::{Manifest, ModelEntry, Profile, Role};
 use meetesh_core::{Db, Error, Result};
 use tauri::{AppHandle, Manager};
@@ -63,8 +64,11 @@ pub struct AppState {
     /// Loaded model, reused between transcriptions. Reloaded when the active model changes.
     pub transcriber: Mutex<Option<Arc<WhisperTranscriber>>>,
     pub job: Mutex<Option<TranscriptionJob>>,
-    /// Loaded assist model (about 4 GB in memory). Loaded on the first hint, kept afterwards.
-    pub assistant: Mutex<Option<Arc<LlamaAssistant>>>,
+    /// Loaded language models by manifest id (a few GB each). The hints model stays loaded; a
+    /// different notes model is loaded when it is needed and released afterwards.
+    pub assistants: Mutex<HashMap<String, Arc<Mutex<Option<Arc<LlamaAssistant>>>>>>,
+    /// Explicit model choices per slot (see `models::selection`), mirrored in the settings table.
+    pub selection: Mutex<HashMap<Role, String>>,
     pub hint_job: Mutex<Option<HintJob>>,
     pub summary_job: Mutex<Option<SummaryJob>>,
     /// Live transcription chunks queued or in progress. Hint generation yields while this is above
@@ -91,6 +95,10 @@ impl AppState {
             .get_setting(crate::commands::assist::AUTO_HINTS_KEY)?
             .map(|s| meetesh_core::assist::trigger::AutoHintMode::parse(&s))
             .unwrap_or_default();
+        let stored_selection = [Role::Asr, Role::Assist, Role::Summary]
+            .into_iter()
+            .filter_map(|r| db.get_setting(&selection_key(r)).ok().flatten().filter(|v| !v.is_empty()).map(|v| (r, v)))
+            .collect::<HashMap<_, _>>();
         Ok(AppState {
             auto_hints: Arc::new(crate::auto_hints::AutoHints::new(auto_mode)),
             db: Mutex::new(db),
@@ -101,7 +109,8 @@ impl AppState {
             models: ModelStore::new(data_dir.join("models")),
             transcriber: Mutex::new(None),
             job: Mutex::new(None),
-            assistant: Mutex::new(None),
+            assistants: Mutex::new(HashMap::new()),
+            selection: Mutex::new(stored_selection),
             hint_job: Mutex::new(None),
             summary_job: Mutex::new(None),
             asr_pending: Arc::new(AtomicUsize::new(0)),
@@ -111,44 +120,98 @@ impl AppState {
         })
     }
 
-    /// The speech model the app is configured to use for this device.
+    /// The model a slot uses (see `models::selection`): the user's choice, else the default.
+    pub fn model_for(&self, slot: Role) -> Result<&ModelEntry> {
+        let chosen = self.selection.lock().unwrap().clone();
+        selection::resolve(&self.manifest, PROFILE, slot, |r| chosen.get(&r).cloned()).ok_or_else(|| {
+            Error::Other(match slot {
+                Role::Asr => "No speech model configured".to_string(),
+                _ => "Live assist is not available on this device".to_string(),
+            })
+        })
+    }
+
+    /// The speech model for transcription.
     pub fn asr_model(&self) -> Result<&ModelEntry> {
-        self.manifest
-            .default_for(PROFILE, Role::Asr)
-            .ok_or_else(|| Error::Other("No speech model configured".into()))
+        self.model_for(Role::Asr)
+    }
+
+    /// The language model for hints, automatic hints and live points, if this device has one.
+    pub fn assist_model(&self) -> Result<&ModelEntry> {
+        self.model_for(Role::Assist)
+    }
+
+    /// The language model that writes meeting notes and titles (the hints model unless chosen otherwise).
+    pub fn summary_model(&self) -> Result<&ModelEntry> {
+        self.model_for(Role::Summary)
+    }
+
+    /// Choose a model for a slot. An empty id clears the choice (notes then follow the hints model).
+    pub fn select_model(&self, slot: Role, id: &str) -> Result<()> {
+        if id.is_empty() {
+            if slot == Role::Summary {
+                self.db.lock().unwrap().set_setting(&selection_key(slot), "")?;
+                self.selection.lock().unwrap().remove(&slot);
+                return Ok(());
+            }
+            return Err(Error::Other("Choose a model".into()));
+        }
+        let entry = self.manifest.get(id).ok_or_else(|| Error::Other(format!("Unknown model {id}")))?;
+        if entry.role != selection::kind_of(slot) {
+            return Err(Error::Other(format!("{} cannot be used for this job", entry.name)));
+        }
+        self.db.lock().unwrap().set_setting(&selection_key(slot), id)?;
+        self.selection.lock().unwrap().insert(slot, id.to_string());
+        Ok(())
     }
 }
 
-impl AppState {
-    /// The live-assist model the app is configured to use for this device, if there is one.
-    pub fn assist_model(&self) -> Result<&ModelEntry> {
-        self.manifest
-            .default_for(PROFILE, Role::Assist)
-            .ok_or_else(|| Error::Other("Live assist is not available on this device".into()))
-    }
+fn selection_key(slot: Role) -> String {
+    format!(
+        "model.{}",
+        match slot {
+            Role::Asr => "asr",
+            Role::Assist => "assist",
+            Role::Summary => "summary",
+        }
+    )
 }
 
 /// Context window for hints: about 1,900 tokens of prompt plus the reply fit comfortably.
 const ASSIST_CONTEXT_TOKENS: u32 = 4096;
 
-/// Load (or reuse) the assist model. Takes a couple of seconds if it is not loaded yet.
+/// Load (or reuse) the hints model. Takes a couple of seconds if it is not loaded yet.
 pub fn get_assistant(app: &AppHandle) -> Result<Arc<LlamaAssistant>> {
-    load_assistant(app, |_| {})
+    let entry = app.state::<AppState>().assist_model()?.clone();
+    load_assistant(app, &entry, |_| {})
 }
 
-/// Like `get_assistant`, reporting real loading progress (0.0 to 1.0) while it loads.
-pub fn load_assistant(app: &AppHandle, on_progress: impl FnMut(f32) + 'static) -> Result<Arc<LlamaAssistant>> {
+/// Load (or reuse) the model that writes meeting notes (the hints model unless chosen otherwise).
+pub fn get_notes_assistant(app: &AppHandle) -> Result<Arc<LlamaAssistant>> {
+    let entry = app.state::<AppState>().summary_model()?.clone();
+    load_assistant(app, &entry, |_| {})
+}
+
+/// Load (or reuse) a language model, reporting real loading progress (0.0 to 1.0) while it loads.
+/// Models load independently: loading the notes model never blocks a hint on the hints model.
+pub fn load_assistant(app: &AppHandle, entry: &ModelEntry, on_progress: impl FnMut(f32) + 'static) -> Result<Arc<LlamaAssistant>> {
     let st = app.state::<AppState>();
-    let entry = st.assist_model()?.clone();
-    let mut cached = st.assistant.lock().unwrap();
-    if let Some(a) = cached.as_ref() {
-        if meetesh_core::assist::Assistant::model_id(a.as_ref()) == entry.id {
-            return Ok(a.clone());
-        }
+    let slot = st.assistants.lock().unwrap().entry(entry.id.clone()).or_default().clone();
+    let mut loaded = slot.lock().unwrap();
+    if let Some(a) = loaded.as_ref() {
+        return Ok(a.clone());
     }
-    let a = Arc::new(LlamaAssistant::load_with_progress(&entry.id, &st.models.path(&entry), ASSIST_CONTEXT_TOKENS, on_progress)?);
-    *cached = Some(a.clone());
+    let a = Arc::new(LlamaAssistant::load_with_progress(&entry.id, &st.models.path(entry), ASSIST_CONTEXT_TOKENS, on_progress)?);
+    *loaded = Some(a.clone());
     Ok(a)
+}
+
+/// Free language models nobody needs any more (a notes model that differs from the hints model, or
+/// one that was switched away from). Models still in use by a running request stay alive until it ends.
+pub fn release_unused_assistants(app: &AppHandle) {
+    let st = app.state::<AppState>();
+    let keep: Vec<String> = [st.assist_model().ok(), st.summary_model().ok()].into_iter().flatten().map(|m| m.id.clone()).collect();
+    st.assistants.lock().unwrap().retain(|id, _| keep.contains(id));
 }
 
 /// Load (or reuse) the speech model. Shared by live and full-recording transcription.

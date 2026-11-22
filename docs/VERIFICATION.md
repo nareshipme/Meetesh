@@ -31,10 +31,16 @@ Rule: when someone reports a manual result, update this table in the same change
 | **Auto hints** (questions, pauses) | TESTING.md: Automatic hints | Detector unit tests; mock UI | Not yet. Thresholds are untuned guesses |
 | **Search** | TESTING.md: Search and export | 500 meetings / 200,000 lines: index 0.3 s, search 80 ms | Not yet |
 | **Markdown export** | Copy / Export Markdown | Unit tests | Not yet |
+| **Live screen / review page / Settings dialog** (the redesign) | TESTING.md: "Where things are" | Mock-backend UI checks (tabs, menu, dialog, narrow width) | Not yet |
+| **Model choice per job** (speech, hints, notes) | TESTING.md: Choosing models | Selection rules unit-tested; real downloads and runs of the added models in a Linux sandbox | Not yet |
+| Transcript follows the newest line | TESTING.md: Live transcription | Mock-backend checks | Not yet (the maintainer reported it not following in the real app; the fix is a hardening and could not be reproduced here) |
+| "CPU (no GPU support in this build)" label on a normal Windows build | TESTING.md: GPU | Mock | Not yet; the maintainer saw plain "CPU" on a Windows machine with a GPU, which this label now explains |
+| Readable default titles | New meeting is "Meeting on Sun 22 Nov, 3:45 PM" | Unit tests including the upgrade | Not yet |
 | Packaged macOS build (macOS 13+, Info.plist microphone text) | Build a bundle and run it | Config only | Not yet |
 
 ## Log
 
 Newest first. One line per report: date, who, what, result.
 
+- 2026-11-22: maintainer on Windows: a machine with a GPU showed "CPU" for live assist (cause: a normal build contains no GPU backend; label added, see PR #19); the transcript did not seem to follow new lines; the interface felt too bulky (redesign); asked for per-job model choice, speaker recognition, hints that use earlier meetings, readable default titles.
 - 2026-11-22: five features merged to `main` (#13 to #17). None of them has been run on real hardware yet.

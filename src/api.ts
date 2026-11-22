@@ -73,6 +73,18 @@ export interface ModelInfo {
   /** Bytes on disk for a paused or failed download. */
   partial_bytes: number;
   is_default: boolean;
+  /** Which jobs currently use this model: speech ("asr"), hints ("assist"), notes ("summary"). */
+  selected_for: Array<"asr" | "assist" | "summary">;
+}
+
+export type ModelSlot = "asr" | "assist" | "summary";
+
+/** The model chosen for each job. `summary_follows_hints`: notes use the same model as hints. */
+export interface ModelSelection {
+  asr: string;
+  assist: string;
+  summary: string;
+  summary_follows_hints: boolean;
 }
 
 export type DownloadPhase = "downloading" | "verifying" | "paused" | "failed" | "done";
@@ -173,6 +185,9 @@ export const api = {
   stopRecording: () => invoke<Meeting>("stop_recording"),
   exportAudio: (id: number) => invoke<string>("export_audio", { id }),
   listModels: () => invoke<ModelInfo[]>("list_models"),
+  modelSelection: () => invoke<ModelSelection>("model_selection"),
+  /** `id` "" with slot "summary" means "same as hints". */
+  selectModel: (slot: ModelSlot, id: string) => invoke<ModelSelection>("select_model", { slot, id }),
   downloadModel: (id: string) => invoke<void>("download_model", { id }),
   cancelDownload: () => invoke<void>("cancel_download"),
   deleteModel: (id: string) => invoke<void>("delete_model", { id }),
