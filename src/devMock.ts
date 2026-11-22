@@ -65,6 +65,7 @@ export function installMock(variant: string) {
     created_at: now() - ageSec,
     summary: "",
     summary_model: "",
+    title_source: "default",
     transcript_model: "",
     agenda: "",
     status: "stopped",
@@ -78,7 +79,7 @@ export function installMock(variant: string) {
     variant === "empty"
       ? []
       : [
-          meeting(2, "Weekly product sync", 3600 * 3, { duration_ms: 52_000, transcript_model: "whisper-base.en", audio_dir: "/tmp/2", has_system_audio: true, summary: SAMPLE_NOTES, summary_model: "gemma-4-e2b-it" }),
+          meeting(2, "Weekly product sync", 3600 * 3, { duration_ms: 52_000, title_source: "user", transcript_model: "whisper-base.en", audio_dir: "/tmp/2", has_system_audio: true, summary: SAMPLE_NOTES, summary_model: "gemma-4-e2b-it" }),
           meeting(1, "Meeting 2026-11-20 16:40", 3600 * 30, { duration_ms: 1_805_000, status: "recovered", audio_dir: "/tmp/1" }),
         ];
   transcripts.set(
@@ -125,6 +126,10 @@ export function installMock(variant: string) {
       const m = find(id);
       m.summary = SAMPLE_NOTES;
       m.summary_model = "gemma-4-e2b-it";
+      if (m.title_source !== "user") {
+        m.title = "Onboarding launch date";
+        m.title_source = "model";
+      }
       emit("summary-progress", { meeting_id: id, done: total, total, finished: true, cancelled: false, error: null });
     }, 1200);
   }
@@ -199,6 +204,7 @@ export function installMock(variant: string) {
         }
         case "rename_meeting":
           find(a.id).title = a.title;
+          find(a.id).title_source = "user";
           return find(a.id);
         case "delete_meeting":
           meetings.splice(meetings.findIndex((m) => m.id === a.id), 1);

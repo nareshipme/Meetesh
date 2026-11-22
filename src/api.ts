@@ -7,6 +7,8 @@ export interface Meeting {
   created_at: number; // unix seconds
   /** Meeting notes as Markdown ("" until written). */
   summary: string;
+  /** Who chose the title: the date placeholder, the model, or the user (never replaced automatically). */
+  title_source: "default" | "model" | "user";
   /** Model that wrote the notes. */
   summary_model: string;
   transcript_model: string;

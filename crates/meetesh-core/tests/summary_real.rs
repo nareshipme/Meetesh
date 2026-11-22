@@ -78,3 +78,15 @@ fn long_meeting_goes_through_notes_and_still_yields_a_summary() {
     let s = run(&a, &all, "long meeting");
     assert!(!s.overview.is_empty());
 }
+
+#[test]
+fn the_notes_get_a_short_title() {
+    use meetesh_core::assist::title::generate_title;
+    let Some(a) = model() else { return eprintln!("skipped: MEETESH_TEST_ASSIST_MODEL not set") };
+    let notes = run(&a, &segments(LAUNCH, 0), "short call").to_markdown();
+    let t = Instant::now();
+    let title = generate_title(&a, &notes, Arc::new(AtomicBool::new(false))).expect("title call");
+    eprintln!("== title in {:.1}s: {title:?}", t.elapsed().as_secs_f32());
+    let title = title.expect("a usable title");
+    assert!(title.split_whitespace().count() <= 9);
+}

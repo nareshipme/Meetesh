@@ -28,7 +28,8 @@ export default function MeetingView({ meeting, recording, modelReady, assistRead
   const titleRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setTitle(meeting.title);
+    // A title written by the model can arrive while the user is typing their own: never overwrite that.
+    if (document.activeElement !== titleRef.current) setTitle(meeting.title);
     setConfirmDelete(false);
   }, [meeting.id, meeting.title]);
 
@@ -80,6 +81,7 @@ export default function MeetingView({ meeting, recording, modelReady, assistRead
           ref={titleRef}
           className="title"
           aria-label="Meeting title"
+          title={meeting.title_source === "model" ? "Written by the on-device model from the notes. Edit it to keep your own." : undefined}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           onBlur={commitTitle}
