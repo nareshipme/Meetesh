@@ -176,6 +176,10 @@ Each job picks its own model in **Settings**. What we measured on a 4-core CPU w
 
 What the notes looked like: Gemma 4 E2B was faithful to the script; Gemma 3 1B was faster but repeated bullets and put action items under decisions; Gemma 3 4B was well structured but not clearly better than E2B on this script, and slower, so it is offered as an alternative, not as an upgrade. These are single scripted dialogues, not real meetings: treat the quality notes as a first impression. A GPU changes all the speeds.
 
+### Building a binary to give to other people
+
+By default whisper.cpp is compiled for the CPU of the machine that builds it (`-march=native`), which is fastest for you but crashes with "illegal instruction" on an older CPU. For anything you distribute, build with `GGML_NATIVE=OFF` (CI does, after a real SIGILL on a CI runner whose cached build came from a different CPU model). llama.cpp already avoids native code unless you set `RUSTFLAGS=-C target-cpu=native`.
+
 ## How it works
 
 ```

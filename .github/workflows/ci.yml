@@ -13,12 +13,19 @@ jobs:
       matrix:
         os: [ubuntu-22.04, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    env:
+      # whisper.cpp is compiled with -march=native by default. GitHub's runners differ in CPU model, and the
+      # cache restores a build made on another one, so the real-Whisper test died with SIGILL (illegal
+      # instruction) on an Ubuntu runner. A portable build also is what any released binary must be.
+      GGML_NATIVE: "OFF"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: portable-ggml
       - name: Linux system libraries
         if: matrix.os == 'ubuntu-22.04'
         run: |
