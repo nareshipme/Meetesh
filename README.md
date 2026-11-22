@@ -147,7 +147,14 @@ Only the live-assist model (llama.cpp) can use the GPU. Speech recognition runs 
 | macOS | Metal is compiled in automatically. If it fails on your Mac the app falls back to the CPU (see Troubleshooting). |
 | Windows, Linux | **Opt-in** Vulkan (a normal build has no GPU support at all, and the sidebar then says "CPU (no GPU support in this build)") (works with NVIDIA, AMD and Intel GPUs). Install the Vulkan SDK first (Windows: LunarG SDK; Ubuntu: `sudo apt install libvulkan-dev glslc spirv-headers`), then run `npm run tauri:gpu` (the same as `npm run tauri dev -- --features vulkan`). |
 
-**Windows Vulkan build status.** Unresolved. In CI the Vulkan SDK installs and is found (`glslc`, CMake's "Found Vulkan", and the Vulkan loader `vulkan-1.dll` is present), but the build fails inside llama.cpp's shader generator with `CMake error : Not a file: ...cmake_install.cmake` and "cannot find the batch label specified - VCEnd". It failed the same way on Visual Studio 18 and on Visual Studio 2022 and with a short target folder, so it is neither the Visual Studio version nor the 260-character path limit. The Ninja generator is being tried next (`CMAKE_GENERATOR=Ninja`, from a Visual Studio developer prompt). Until a Windows Vulkan build is shown to work, treat `npm run tauri:gpu` on Windows as **unverified**: if it fails for you with that error, please send us your Visual Studio and CMake versions.
+**Windows Vulkan build.** It builds, but only with the Ninja generator. With the default Visual Studio generator, llama.cpp's shader generator fails (`CMake error : Not a file: ...cmake_install.cmake`, "cannot find the batch label specified - VCEnd"), on Visual Studio 2022 and 18 alike and with short paths, so this is not the path limit or the Visual Studio version. CI shows the following works on a clean machine: install the LunarG Vulkan SDK and Ninja, open an **x64 Native Tools Command Prompt for VS**, then
+
+```bat
+set CMAKE_GENERATOR=Ninja
+npm run tauri:gpu
+```
+
+CI built it this way in about 8 minutes and a program linked against the Vulkan loader started (the runner has no GPU, so nothing was run on one). **Whether it uses your GPU and how fast is not yet verified**; the live-assist row should say "GPU", and please send the time a hint takes.
 
 The Vulkan build has been verified to compile, load the model onto a Vulkan device and generate with it on Linux using a software Vulkan driver (so the speed on a real GPU is not yet measured). CUDA is not wired up yet.
 

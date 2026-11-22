@@ -77,7 +77,7 @@ MEETESH_TEST_MODEL=/path/to/ggml-tiny.en.bin \
 - [ ] Note what the live-assist row says: "GPU", "CPU", or "CPU (GPU failed)". If it says "GPU failed", the sidebar shows the log folder: open `Meetesh.log` there and look for lines starting with `llama.cpp` (warnings and errors). Send them along.
 - [ ] Run the GPU probe and send the whole output: `cargo run -p meetesh-core --example gpu_probe --features metal` (macOS), or `--features vulkan` (Windows/Linux, needs the Vulkan SDK).
 - [ ] Windows/Linux, a normal build (`npm run tauri dev`): the live-assist row says "CPU (no GPU support in this build)" with the command to build with a GPU. That is expected; it is not a failure.
-- [ ] Windows/Linux with a GPU: run the app with `npm run tauri:gpu` and check the row says "GPU" and hints are faster than on the CPU. Report the time shown on a hint.
+- [ ] Windows/Linux with a GPU: run the app with `npm run tauri:gpu` (on Windows from an x64 Native Tools Command Prompt for VS, after `set CMAKE_GENERATOR=Ninja`; see the README) and check the row says "GPU" and hints are faster than on the CPU. Report the time shown on a hint.
 
 **Live assist** (needs the live-assist model)
 - [ ] While recording (or on any meeting that has a transcript), click **✦ Hint** or press Ctrl/Cmd+Shift+H. The first hint is as quick as the later ones, because the model is already loaded. Text streams into a blue panel above the transcript.
