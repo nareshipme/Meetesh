@@ -151,6 +151,10 @@ Only the live-assist model (llama.cpp) can use the GPU. Speech recognition runs 
 
 The Vulkan build has been verified to compile, load the model onto a Vulkan device and generate with it on Linux using a software Vulkan driver (so the speed on a real GPU is not yet measured). CUDA is not wired up yet.
 
+### Building a binary to give to other people
+
+By default whisper.cpp is compiled for the CPU of the machine that builds it (`-march=native`), which is fastest for you but crashes with "illegal instruction" on an older CPU. For anything you distribute, build with `GGML_NATIVE=OFF` (CI does, after a real SIGILL on a CI runner whose cached build came from a different CPU model). llama.cpp already avoids native code unless you set `RUSTFLAGS=-C target-cpu=native`.
+
 ## How it works
 
 ```
