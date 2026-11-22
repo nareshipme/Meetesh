@@ -50,6 +50,7 @@ These show the interface running against the built-in sample-data backend (see [
 | GPU for live assist: Metal on macOS, opt-in Vulkan on Windows and Linux (see [GPU acceleration](#gpu-acceleration)) | Metal compiles in CI but is failing on at least one Mac ([#3](https://github.com/nareshipme/Meetesh/issues/3)); Vulkan verified with a software Vulkan device only |
 | `gpu_probe` tool that tries the known GPU workarounds and reports which one works | Working (Linux verified) |
 | Optional meeting goals that keep hints on topic | Working |
+| One-click recording: **New recording** (Ctrl/Cmd+N) opens the consent notice straight away, so starting is one click plus Enter. The consent reminder is still shown before every recording. The microphone is chosen in the same step and remembered | Working |
 | Meetings list, rename, delete (audio is deleted with the meeting), WAV export | Working |
 | Responsive, dark-mode-aware UI | Working |
 
@@ -72,7 +73,6 @@ Tracked as GitHub issues:
 | [#3 GPU is not used for model inference](https://github.com/nareshipme/Meetesh/issues/3) (diagnostics, log capture and opt-in Vulkan added; the Mac cause still needs a `gpu_probe` run) | Bug |
 | [#4 Missing words in the live transcript: improve audio before transcription](https://github.com/nareshipme/Meetesh/issues/4) (quiet-microphone loss fixed in tests; real-speech confirmation and a larger model option still open) | Improvement |
 | [#5 Live transcription lags while a hint is being generated](https://github.com/nareshipme/Meetesh/issues/5) | Bug |
-| [#6 One-click new recording](https://github.com/nareshipme/Meetesh/issues/6) | Improvement |
 | [#7 Auto-generate the meeting title with the local model](https://github.com/nareshipme/Meetesh/issues/7) | Feature |
 | [#8 Decide: should users be able to choose their models?](https://github.com/nareshipme/Meetesh/issues/8) | Design question |
 
@@ -121,7 +121,7 @@ npm run tauri dev
 
 The first build takes several minutes: Whisper and llama.cpp compile from source, and dependencies are built optimized even in dev builds (so hashing a 3 GB model is fast). Then in the app:
 1. Download the speech model from the sidebar (about 148 MB, once). The optional live-assist model is 3.1 GB. Downloaded models load in the background at every start; the bar at the top shows progress.
-2. Create a meeting and click **Record**. Your OS may ask for microphone permission.
+2. Click **● New recording** (or press Ctrl/Cmd+N) and confirm the consent notice. Your OS may ask for microphone permission.
 3. Talk. Live text appears as you speak. Click **Stop** when done.
 
 See [TESTING.md](TESTING.md) for a full manual test checklist.

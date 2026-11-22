@@ -14,12 +14,14 @@ interface Props {
   assistReady: boolean;
   assistLoad: ModelLoadEvent | undefined;
   notify: Notify;
+  autoConsent: boolean;
+  onConsentClosed: (started: boolean) => void;
   onChange: () => void;
   onBack: () => void;
   onDeleted: () => void;
 }
 
-export default function MeetingView({ meeting, recording, modelReady, assistReady, assistLoad, notify, onChange, onBack, onDeleted }: Props) {
+export default function MeetingView({ meeting, recording, modelReady, assistReady, assistLoad, notify, autoConsent, onConsentClosed, onChange, onBack, onDeleted }: Props) {
   const [title, setTitle] = useState(meeting.title);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
@@ -93,7 +95,15 @@ export default function MeetingView({ meeting, recording, modelReady, assistRead
       </header>
 
       <div className="actions">
-        <Recorder meeting={meeting} recording={recording} notify={notify} onChange={onChange} />
+        <Recorder
+          key={meeting.id}
+          meeting={meeting}
+          recording={recording}
+          notify={notify}
+          autoConsent={autoConsent}
+          onConsentClosed={onConsentClosed}
+          onChange={onChange}
+        />
         <div className="row actions-end">
           {meeting.duration_ms > 0 && !recording && (
             <button className="btn btn-sm" onClick={exportAudio}>

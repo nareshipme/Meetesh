@@ -8,22 +8,63 @@ interface Props {
   meeting: Meeting;
   recording: boolean;
   notify: Notify;
+  /** Open the consent notice immediately (set for a meeting just created by "New recording"). */
+  autoConsent: boolean;
+  /** The consent notice closed: `started` is true if recording began, false if it was cancelled. */
+  onConsentClosed: (started: boolean) => void;
   onChange: () => void;
 }
 
+const MIC_KEY = "meetesh.microphone";
+
+function savedMic(): string {
+  try {
+    return localStorage.getItem(MIC_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
 /** Record / stop controls for one meeting: consent notice, microphone choice, timer, level meter. */
-export default function Recorder({ meeting, recording, notify, onChange }: Props) {
+export default function Recorder({ meeting, recording, notify, autoConsent, onConsentClosed, onChange }: Props) {
   const [devices, setDevices] = useState<InputDevice[]>([]);
-  const [device, setDevice] = useState("");
-  const [consent, setConsent] = useState(false);
+  const [device, setDevice] = useState(savedMic);
+  const [consent, setConsent] = useState(autoConsent && meeting.duration_ms === 0);
+  const confirmRef = useRef<HTMLButtonElement>(null);
   const [level, setLevel] = useState(0);
   const [elapsed, setElapsed] = useState(0);
   const [busy, setBusy] = useState(false);
   const startedAt = useRef(0);
 
   useEffect(() => {
-    api.listInputDevices().then(setDevices).catch((e) => notify("error", errorText(e)));
+    api
+      .listInputDevices()
+      .then((list) => {
+        setDevices(list);
+        // Forget a remembered microphone that is no longer connected.
+        setDevice((d) => (d && !list.some((x) => x.name === d) ? "" : d));
+      })
+      .catch((e) => notify("error", errorText(e)));
   }, [notify]);
+
+  // When the consent notice opens, focus its confirm button so Enter starts recording.
+  useEffect(() => {
+    if (consent) confirmRef.current?.focus();
+  }, [consent]);
+
+  function chooseDevice(name: string) {
+    setDevice(name);
+    try {
+      localStorage.setItem(MIC_KEY, name);
+    } catch {
+      /* remembering the microphone is a convenience only */
+    }
+  }
+
+  function closeConsent(started: boolean) {
+    setConsent(false);
+    onConsentClosed(started);
+  }
 
   useEffect(() => {
     if (!recording) return;
@@ -39,7 +80,7 @@ export default function Recorder({ meeting, recording, notify, onChange }: Props
   }, [recording]);
 
   async function start() {
-    setConsent(false);
+    closeConsent(true);
     setBusy(true);
     try {
       await api.startRecording(meeting.id, device || undefined);
@@ -80,18 +121,32 @@ export default function Recorder({ meeting, recording, notify, onChange }: Props
 
   if (consent) {
     return (
-      <div className="consent" role="alert">
+      <div
+        className="consent"
+        role="alert"
+        onKeyDown={(e) => {
+          if (e.key === "Escape") closeConsent(false);
+        }}
+      >
         <p>
           Make sure everyone in the meeting knows it is being recorded. Recording without consent may be illegal where you
           live.
         </p>
         <div className="row">
-          <button className="btn btn-danger" onClick={start} disabled={busy}>
+          <button ref={confirmRef} className="btn btn-danger" onClick={start} disabled={busy}>
             ● Everyone knows, start recording
           </button>
-          <button className="btn" onClick={() => setConsent(false)}>
+          <button className="btn" onClick={() => closeConsent(false)}>
             Cancel
           </button>
+          <select aria-label="Microphone" value={device} onChange={(e) => chooseDevice(e.target.value)}>
+            <option value="">Default microphone</option>
+            {devices.map((d) => (
+              <option key={d.name} value={d.name}>
+                {d.name}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
     );
@@ -102,7 +157,7 @@ export default function Recorder({ meeting, recording, notify, onChange }: Props
       <button className="btn btn-primary" onClick={() => setConsent(true)} disabled={busy}>
         ● Record
       </button>
-      <select aria-label="Microphone" value={device} onChange={(e) => setDevice(e.target.value)}>
+      <select aria-label="Microphone" value={device} onChange={(e) => chooseDevice(e.target.value)}>
         <option value="">Default microphone</option>
         {devices.map((d) => (
           <option key={d.name} value={d.name}>

@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
 import MeetingView from "./components/MeetingView";
 import LoadingBanner from "./components/LoadingBanner";
@@ -14,18 +14,66 @@ export default function App() {
   const { meetings, recordingId, transcribingId, refresh } = useMeetings(notify);
   const models = useModels(notify);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  // A meeting just created by "New recording": its consent notice opens straight away.
+  const [pendingConsent, setPendingConsent] = useState<{ id: number; title: string } | null>(null);
 
   const selected = meetings.find((m) => m.id === selectedId) ?? null;
 
-  const newMeeting = useCallback(async () => {
-    try {
-      const m = await api.createMeeting();
-      await refresh();
-      setSelectedId(m.id);
-    } catch (e) {
-      notify("error", errorText(e));
+  /** `recording`: also open the consent notice, so one confirmation starts recording. */
+  const createMeeting = useCallback(
+    async (recording: boolean) => {
+      if (recording && recordingId !== null) {
+        // Only one recording at a time: go to the one in progress.
+        setSelectedId(recordingId);
+        notify("info", "A recording is already in progress");
+        return;
+      }
+      try {
+        const m = await api.createMeeting();
+        await refresh();
+        setSelectedId(m.id);
+        setPendingConsent(recording ? { id: m.id, title: m.title } : null);
+      } catch (e) {
+        notify("error", errorText(e));
+      }
+    },
+    [refresh, notify, recordingId],
+  );
+  const newRecording = useCallback(() => createMeeting(true), [createMeeting]);
+  const newNotes = useCallback(() => createMeeting(false), [createMeeting]);
+
+  // Cmd/Ctrl+N starts a new recording.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === "n") {
+        e.preventDefault();
+        newRecording();
+      }
     }
-  }, [refresh, notify]);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [newRecording]);
+
+  /** The consent notice of an auto-opened meeting was closed. If it was cancelled and nothing was
+   *  entered, remove the empty meeting so cancelling leaves no clutter behind. */
+  const onConsentClosed = useCallback(
+    async (started: boolean) => {
+      const p = pendingConsent;
+      setPendingConsent(null);
+      if (!p || started) return;
+      const m = meetings.find((x) => x.id === p.id);
+      if (m && m.title === p.title && m.agenda === "" && m.duration_ms === 0 && m.status === "stopped") {
+        try {
+          await api.deleteMeeting(p.id);
+          setSelectedId(null);
+          refresh();
+        } catch {
+          /* leaving an empty meeting behind is harmless */
+        }
+      }
+    },
+    [pendingConsent, meetings, refresh],
+  );
 
   return (
     <div className="app">
@@ -36,7 +84,8 @@ export default function App() {
         transcribingId={transcribingId}
         models={models}
         onSelect={setSelectedId}
-        onNew={newMeeting}
+        onNewRecording={newRecording}
+        onNewNotes={newNotes}
         hidden={selected !== null}
       />
       <main className={selected ? "main" : "main hide-on-mobile"}>
@@ -49,6 +98,8 @@ export default function App() {
             assistReady={models.assistInstalled}
             assistLoad={models.assistLoad}
             notify={notify}
+            autoConsent={pendingConsent?.id === selected.id}
+            onConsentClosed={onConsentClosed}
             onChange={refresh}
             onBack={() => setSelectedId(null)}
             onDeleted={() => {
@@ -62,12 +113,18 @@ export default function App() {
             <p className="muted">Private meeting notes. Everything runs on this device.</p>
             <ol>
               {!models.speechInstalled && <li>Download the speech model (once) from the panel at the bottom left.</li>}
-              <li>Create a meeting and press Record.</li>
+              <li>Press New recording and confirm.</li>
               <li>Talk. Live text appears as you speak.</li>
             </ol>
-            <button className="btn btn-primary" onClick={newMeeting}>
-              + New meeting
-            </button>
+            <div className="row">
+              <button className="btn btn-primary" onClick={newRecording}>
+                ● New recording
+              </button>
+              <button className="btn" onClick={newNotes}>
+                Notes only
+              </button>
+            </div>
+            <small className="muted">Shortcut: Ctrl/Cmd+N</small>
           </div>
         )}
       </main>

@@ -10,7 +10,8 @@ interface Props {
   transcribingId: number | null;
   models: ModelsState;
   onSelect: (id: number) => void;
-  onNew: () => void;
+  onNewRecording: () => void;
+  onNewNotes: () => void;
   hidden: boolean; // on narrow screens only one pane shows at a time
 }
 
@@ -21,13 +22,16 @@ function statusChip(m: Meeting, recordingId: number | null, transcribingId: numb
   return null;
 }
 
-export default function Sidebar({ meetings, selectedId, recordingId, transcribingId, models, onSelect, onNew, hidden }: Props) {
+export default function Sidebar({ meetings, selectedId, recordingId, transcribingId, models, onSelect, onNewRecording, onNewNotes, hidden }: Props) {
   return (
     <aside className={hidden ? "sidebar hide-on-mobile" : "sidebar"}>
       <div className="sidebar-top">
         <h1 className="brand">Meetesh</h1>
-        <button className="btn btn-primary btn-block" onClick={onNew}>
-          + New meeting
+        <button className="btn btn-primary btn-block" onClick={onNewRecording} title="Start a new recording (Ctrl/Cmd+N)">
+          ● New recording
+        </button>
+        <button className="link-btn" onClick={onNewNotes}>
+          or a meeting for notes only
         </button>
       </div>
 
