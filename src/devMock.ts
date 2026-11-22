@@ -12,6 +12,7 @@
  *   ?mock=gpufail    live assist loads, but the GPU failed so the CPU is used
  *   ?mock=nosystem   system-audio capture unavailable (like Linux)
  *   ?mock=sysfail    system-audio capture is asked for but fails (permission denied)
+ *   ?mock=nogpu      the app was built without a GPU backend
  *   ?mock=sumfail    writing the meeting notes fails
  *   ?mock=dlfail     the first live-assist download fails at 40% (Retry works)
  *
@@ -221,7 +222,7 @@ export function installMock(variant: string) {
       if (p >= 1) {
         clearInterval(t);
         publish(id, "warming", { progress: 1 });
-        window.setTimeout(() => publish(id, "ready", { backend: variant === "gpufail" ? "CPU (GPU failed)" : "GPU" }), 1200);
+        window.setTimeout(() => publish(id, "ready", { backend: variant === "gpufail" ? "CPU (GPU failed)" : variant === "nogpu" ? "CPU (no GPU support in this build)" : "GPU" }), 1200);
       } else publish(id, "loading", { progress: p });
     }, 250);
   }

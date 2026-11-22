@@ -57,6 +57,7 @@ MEETESH_TEST_MODEL=/path/to/ggml-tiny.en.bin \
 - [ ] Speak several sentences with pauses: segments appear in order with increasing timestamps.
 - [ ] Talk continuously for 10+ seconds without pausing: text still appears (it is cut about every 6 seconds).
 - [ ] Stay silent for 10 seconds: nothing is invented (no "thank you", no repeated phrases).
+- [ ] Talk long enough for the transcript to fill its box: the view follows the newest line by itself. Scroll up to read earlier text: it stops following and a **↓ Latest** button appears; click it to follow again. Ask for a hint while it is following: the view stays on the newest line.
 
 **Model downloads** (sidebar, bottom left)
 - [ ] The sidebar lists two models (speech, live assist) with their sizes. Start the live-assist download (3.1 GB). The bar and "Downloading N% · x GB of y GB" move.
@@ -75,7 +76,8 @@ MEETESH_TEST_MODEL=/path/to/ggml-tiny.en.bin \
 **GPU** (needs the live-assist model downloaded)
 - [ ] Note what the live-assist row says: "GPU", "CPU", or "CPU (GPU failed)". If it says "GPU failed", the sidebar shows the log folder: open `Meetesh.log` there and look for lines starting with `llama.cpp` (warnings and errors). Send them along.
 - [ ] Run the GPU probe and send the whole output: `cargo run -p meetesh-core --example gpu_probe --features metal` (macOS), or `--features vulkan` (Windows/Linux, needs the Vulkan SDK).
-- [ ] Windows/Linux with a GPU: run the app with `npm run tauri dev -- --features vulkan` and check the row says "GPU" and hints are faster than on the CPU. Report the time shown on a hint.
+- [ ] Windows/Linux, a normal build (`npm run tauri dev`): the live-assist row says "CPU (no GPU support in this build)" with the command to build with a GPU. That is expected; it is not a failure.
+- [ ] Windows/Linux with a GPU: run the app with `npm run tauri:gpu` and check the row says "GPU" and hints are faster than on the CPU. Report the time shown on a hint.
 
 **Live assist** (needs the live-assist model)
 - [ ] While recording (or on any meeting that has a transcript), click **✦ Hint** or press Ctrl/Cmd+Shift+H. The first hint is as quick as the later ones, because the model is already loaded. Text streams into a blue panel above the transcript.
