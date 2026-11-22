@@ -54,6 +54,23 @@ export default function MeetingView({ meeting, recording, modelReady, assistRead
     }
   }
 
+  async function exportMarkdown() {
+    try {
+      notify("info", `Markdown saved to ${await api.exportMarkdown(meeting.id)}`);
+    } catch (e) {
+      notify("error", errorText(e));
+    }
+  }
+
+  async function copyMarkdown() {
+    try {
+      await navigator.clipboard.writeText(await api.meetingMarkdown(meeting.id));
+      notify("info", "Meeting copied as Markdown");
+    } catch {
+      notify("error", "Could not copy to the clipboard");
+    }
+  }
+
   async function remove() {
     try {
       await api.deleteMeeting(meeting.id);
@@ -108,6 +125,16 @@ export default function MeetingView({ meeting, recording, modelReady, assistRead
           onChange={onChange}
         />
         <div className="row actions-end">
+          {!recording && (
+            <>
+              <button className="btn btn-sm" onClick={copyMarkdown} title="Title, notes and transcript as Markdown, on the clipboard">
+                Copy Markdown
+              </button>
+              <button className="btn btn-sm" onClick={exportMarkdown} title="Save title, notes and transcript as a .md file">
+                Export Markdown
+              </button>
+            </>
+          )}
           {meeting.duration_ms > 0 && !recording && (
             <button className="btn btn-sm" onClick={exportAudio}>
               Export audio

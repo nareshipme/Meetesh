@@ -86,6 +86,16 @@ MEETESH_TEST_MODEL=/path/to/ggml-tiny.en.bin \
 - [ ] Ask for a hint repeatedly while you keep talking (live transcription running). The live text must keep up with your speech: it should stay a few seconds behind at most while hints are being generated. A hint may take a little longer to appear while you talk; that is expected, because it lets transcription go first. If live text still lags or the log says chunks were dropped, report it with your Mac model and whether the row says GPU or CPU.
 - [ ] Please report the time shown on a hint, your chip, macOS version, and memory use in Activity Monitor.
 
+**Search and export**
+- [ ] Press Ctrl/Cmd+K: the search box is focused. Type a word you know is in an old transcript: results appear as you type, with the word in bold, the timestamp for transcript lines, and "Notes" for matches in the notes. Click a result: the meeting opens and the search stays so you can go back.
+- [ ] A word that is in a meeting's title ranks that meeting first. Several words: every word must be there (any order). A half-typed word ("quart") still matches.
+- [ ] Accents and capitals do not matter ("cafe" finds "Café"). Typing quotes, brackets, `AND`, `*` never errors.
+- [ ] While recording with live text, search for a word just said: it is found within a few seconds, and after **Re-transcribe** the old wording no longer matches.
+- [ ] Delete a meeting: it disappears from search results. Escape clears the search.
+- [ ] Upgrading from an older version: meetings recorded before this version are searchable (the first start after the upgrade builds the index in well under a second for 200,000 lines; tell me if it is slow for you).
+- [ ] **Copy Markdown** then paste into any editor: title, date, goals, notes and transcript read well. **Export Markdown** shows a path; open the file. With system audio the transcript lines say You / Others.
+- [ ] A notes-only meeting (no audio) exports and copies fine.
+
 **Automatic hints** (needs the live-assist model; for questions also system audio, see above)
 - [ ] The menu "Auto hints" above the transcript is off by default. Choose "on questions", restart the app: the choice is remembered.
 - [ ] Record a call with the other participants captured. When someone asks you a question (say it from a video or a colleague), about 2 s after they finish, a hint appears labelled "after a question". If you start answering right away, no hint appears.

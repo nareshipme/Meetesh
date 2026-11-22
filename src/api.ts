@@ -21,6 +21,21 @@ export interface Meeting {
   has_system_audio: boolean;
 }
 
+export interface SearchMatch {
+  kind: "title" | "notes" | "transcript";
+  /** Text around the match; matched words sit between \u0001 and \u0002. */
+  snippet: string;
+  /** For transcript lines: when it was said. */
+  start_ms: number | null;
+}
+
+export interface SearchResult {
+  meeting_id: number;
+  title: string;
+  created_at: number;
+  matches: SearchMatch[];
+}
+
 export interface InputDevice {
   name: string;
   is_default: boolean;
@@ -147,6 +162,9 @@ export const api = {
   createMeeting: (title?: string) => invoke<Meeting>("create_meeting", { title }),
   renameMeeting: (id: number, title: string) => invoke<Meeting>("rename_meeting", { id, title }),
   deleteMeeting: (id: number) => invoke<void>("delete_meeting", { id }),
+  searchMeetings: (query: string) => invoke<SearchResult[]>("search_meetings", { query }),
+  meetingMarkdown: (id: number) => invoke<string>("meeting_markdown", { id }),
+  exportMarkdown: (id: number) => invoke<string>("export_markdown", { id }),
   listInputDevices: () => invoke<InputDevice[]>("list_input_devices"),
   activeRecording: () => invoke<number | null>("active_recording"),
   systemAudioSupport: () => invoke<SystemAudioSupport>("system_audio_support"),

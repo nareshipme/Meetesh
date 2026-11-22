@@ -268,6 +268,24 @@ export function installMock(variant: string) {
             : { available: true, reason: "" };
         case "stop_recording":
           return stopRecordingSim();
+        case "search_meetings": {
+          const words = String(a.query).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+          const mark = (text: string) => text.replace(new RegExp(`(${words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`, "gi"), "\u0001$1\u0002");
+          const has = (text: string) => words.every((w) => text.toLowerCase().includes(w));
+          const out: any[] = [];
+          for (const m of [...meetings].sort((x, y) => y.id - x.id)) {
+            const matches: any[] = [];
+            if (has(m.title)) matches.push({ kind: "title", snippet: mark(m.title), start_ms: null });
+            if (m.summary && has(m.summary)) matches.push({ kind: "notes", snippet: mark(m.summary.replace(/\n+/g, " ").slice(0, 120)), start_ms: null });
+            for (const s of transcripts.get(m.id) ?? []) if (has(s.text) && matches.length < 3) matches.push({ kind: "transcript", snippet: mark(s.text), start_ms: s.start_ms });
+            if (words.length && matches.length) out.push({ meeting_id: m.id, title: m.title, created_at: m.created_at, matches });
+          }
+          return out;
+        }
+        case "meeting_markdown":
+          return `# ${find(a.id).title}\n\n*sample*\n`;
+        case "export_markdown":
+          return `/Users/me/Library/Application Support/app.meetesh.desktop/exports/${a.id}-meeting.md`;
         case "summarize_meeting":
           startSummarySim(a.id);
           return null;

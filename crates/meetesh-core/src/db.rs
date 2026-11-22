@@ -12,7 +12,7 @@ use serde::Serialize;
 use crate::asr::{Source, TranscriptSegment};
 use crate::error::{Error, Result};
 
-const MIGRATIONS: &[&str] = &[
+pub(crate) const MIGRATIONS: &[&str] = &[
     // 1: meetings
     "CREATE TABLE meetings (
         id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -56,6 +56,28 @@ const MIGRATIONS: &[&str] = &[
       WHERE NOT (title GLOB 'Meeting [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]');",
     // 9: small app settings that must survive restarts (key/value)
     "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
+    // 10: full-text search over titles, notes and transcript lines (SQLite FTS5, external content so
+    //     the text is stored once; triggers keep the indexes in step, including cascaded deletes)
+    "CREATE VIRTUAL TABLE fts_meetings USING fts5(title, summary, content='meetings', content_rowid='id', tokenize='unicode61 remove_diacritics 2');
+     CREATE TRIGGER fts_meetings_ai AFTER INSERT ON meetings BEGIN
+        INSERT INTO fts_meetings(rowid, title, summary) VALUES (new.id, new.title, new.summary);
+     END;
+     CREATE TRIGGER fts_meetings_ad AFTER DELETE ON meetings BEGIN
+        INSERT INTO fts_meetings(fts_meetings, rowid, title, summary) VALUES ('delete', old.id, old.title, old.summary);
+     END;
+     CREATE TRIGGER fts_meetings_au AFTER UPDATE OF title, summary ON meetings BEGIN
+        INSERT INTO fts_meetings(fts_meetings, rowid, title, summary) VALUES ('delete', old.id, old.title, old.summary);
+        INSERT INTO fts_meetings(rowid, title, summary) VALUES (new.id, new.title, new.summary);
+     END;
+     CREATE VIRTUAL TABLE fts_segments USING fts5(text, content='transcript_segments', content_rowid='id', tokenize='unicode61 remove_diacritics 2');
+     CREATE TRIGGER fts_segments_ai AFTER INSERT ON transcript_segments BEGIN
+        INSERT INTO fts_segments(rowid, text) VALUES (new.id, new.text);
+     END;
+     CREATE TRIGGER fts_segments_ad AFTER DELETE ON transcript_segments BEGIN
+        INSERT INTO fts_segments(fts_segments, rowid, text) VALUES ('delete', old.id, old.text);
+     END;
+     INSERT INTO fts_meetings(fts_meetings) VALUES ('rebuild');
+     INSERT INTO fts_segments(fts_segments) VALUES ('rebuild');",
 ];
 
 /// Values of `Meeting::title_source`.
@@ -96,6 +118,9 @@ pub struct Meeting {
     /// Who chose the title: "default" (date placeholder), "model" or "user". See `title_source`.
     pub title_source: String,
 }
+
+mod search;
+pub use search::{Match, MatchKind, SearchResult, HIT_END, HIT_START};
 
 pub struct Db {
     conn: Connection,
@@ -269,6 +294,15 @@ impl Db {
             return Err(Error::NotFound(id));
         }
         self.get_meeting(id)
+    }
+
+    /// A unix timestamp as "YYYY-MM-DD HH:MM" in the computer's local time.
+    pub fn local_time(&self, ts: i64) -> Result<String> {
+        Ok(self.conn.query_row(
+            "SELECT strftime('%Y-%m-%d %H:%M', ?1, 'unixepoch', 'localtime')",
+            params![ts],
+            |r| r.get(0),
+        )?)
     }
 
     pub fn get_setting(&self, key: &str) -> Result<Option<String>> {

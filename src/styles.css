@@ -208,3 +208,12 @@ progress { flex: 1; min-width: 100px; max-width: 320px; height: 8px; accent-colo
 .notes-body li { margin: 2px 0; line-height: 1.45; }
 
 .auto-hints { font-size: 12px; padding: 3px 6px; max-width: 210px; }
+
+/* Search */
+.search { padding: 0 12px 8px; }
+.search input { width: 100%; box-sizing: border-box; font: inherit; font-size: 13px; padding: 6px 9px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); color: inherit; }
+.results { list-style: none; margin: 0; padding: 0; }
+.results .item { display: flex; flex-direction: column; align-items: stretch; text-align: left; }
+.hit { display: block; font-size: 12px; color: var(--muted); line-height: 1.4; margin-top: 3px; overflow-wrap: anywhere; }
+.hit-where { display: inline-block; min-width: 34px; margin-right: 4px; font-variant-numeric: tabular-nums; opacity: .8; }
+mark { background: var(--accent-soft); color: inherit; font-weight: 600; border-radius: 2px; padding: 0 1px; }
