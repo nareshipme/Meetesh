@@ -53,6 +53,7 @@ pub fn run() {
             models::discard_download,
             models::model_runtime,
             models::retry_model_load,
+            models::log_dir,
             transcription::get_transcript,
             transcription::transcribe_meeting,
             transcription::cancel_transcription,

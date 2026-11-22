@@ -17,6 +17,9 @@ llama-cpp-2 = { version = "0.1.161", optional = true, default-features = false }
 # Renders the chat template stored in a model file (llama.cpp cannot render newer ones).
 minijinja = { version = "2", optional = true, features = ["builtins", "macros", "loop_controls"] }
 minijinja-contrib = { version = "2", optional = true, features = ["pycompat"] }
+# Forwards llama.cpp's own log messages (it only speaks `tracing`) into the app log.
+tracing-core = { version = "0.1", optional = true }
+log = { version = "0.4", optional = true }
 ureq = "2"
 sha2 = "0.11.1"
 serde_json = "1.0.154"
@@ -25,4 +28,13 @@ serde_json = "1.0.154"
 # whisper.cpp backend. Off by default so the core stays light and easy to cross-compile.
 whisper = ["dep:whisper-rs"]
 # On-device language model for live assist (llama.cpp backend).
-llm = ["dep:llama-cpp-2", "dep:minijinja", "dep:minijinja-contrib"]
+llm = ["dep:llama-cpp-2", "dep:minijinja", "dep:minijinja-contrib", "dep:tracing-core", "dep:log"]
+# Run the assist model on the GPU through Metal (macOS).
+metal = ["llm", "llama-cpp-2/metal"]
+# Run the assist model on the GPU through Vulkan (vendor-neutral; Windows and Linux). Needs the Vulkan
+# SDK (glslc, headers) to build. Opt-in: `cargo build --features vulkan`.
+vulkan = ["llm", "llama-cpp-2/vulkan"]
+
+[[example]]
+name = "gpu_probe"
+required-features = ["llm"]

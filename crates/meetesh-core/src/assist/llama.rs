@@ -29,12 +29,10 @@ fn backend() -> Result<&'static LlamaBackend> {
     static BACKEND: OnceLock<std::result::Result<LlamaBackend, String>> = OnceLock::new();
     BACKEND
         .get_or_init(|| {
-            let mut b = LlamaBackend::init().map_err(|e| e.to_string())?;
-            // llama.cpp is chatty on stderr, so its logs are off by default. Set MEETESH_LLAMA_LOGS=1
-            // to see them (they show the real reason when the GPU path fails).
-            if std::env::var_os("MEETESH_LLAMA_LOGS").is_none() {
-                b.void_logs();
-            }
+            // Route llama.cpp's own messages into the app log (warnings and errors; everything with
+            // MEETESH_LLAMA_LOGS=1). Must happen before init so start-up messages are caught too.
+            crate::assist::logging::install();
+            let b = LlamaBackend::init().map_err(|e| e.to_string())?;
             Ok(b)
         })
         .as_ref()
@@ -76,9 +74,14 @@ fn should_fall_back(on_gpu: bool, decode_failed: bool, text_emitted: bool) -> bo
     on_gpu && decode_failed && !text_emitted
 }
 
+/// `MEETESH_GPU=off` (or `cpu`/`0`) forces the CPU, for diagnosing GPU problems.
+pub fn gpu_disabled_by_env() -> bool {
+    std::env::var("MEETESH_GPU").map(|v| matches!(v.to_ascii_lowercase().as_str(), "off" | "cpu" | "0" | "false")).unwrap_or(false)
+}
+
 fn load_model(path: &Path, gpu: bool, on_progress: Option<Box<dyn FnMut(f32) -> bool>>) -> Result<LlamaModel> {
     let backend = backend()?;
-    let gpu_layers = if gpu && backend.supports_gpu_offload() { 999 } else { 0 };
+    let gpu_layers = if gpu && backend.supports_gpu_offload() && !gpu_disabled_by_env() { 999 } else { 0 };
     let mut params = LlamaModelParams::default().with_n_gpu_layers(gpu_layers);
     if let Some(cb) = on_progress {
         params = params.with_progress_callback(cb);
@@ -94,7 +97,7 @@ impl LlamaAssistant {
 
     /// Like `load`, reporting real loading progress (0.0 ..= 1.0) from llama.cpp.
     pub fn load_with_progress(model_id: &str, model_path: &Path, n_ctx: u32, mut on_progress: impl FnMut(f32) + 'static) -> Result<Self> {
-        let gpu = backend()?.supports_gpu_offload();
+        let gpu = backend()?.supports_gpu_offload() && !gpu_disabled_by_env();
         let model = load_model(
             model_path,
             gpu,
