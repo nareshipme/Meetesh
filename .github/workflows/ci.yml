@@ -77,7 +77,7 @@ jobs:
           "VULKAN_SDK=$sdk" | Out-File -FilePath $env:GITHUB_ENV -Append
           "$sdk\Bin" | Out-File -FilePath $env:GITHUB_PATH -Append
           Write-Host "Vulkan SDK at $sdk"
-          Get-Command glslc
+          & "$sdk\Bin\glslc.exe" --version
           Write-Host "vulkan-1.dll (the loader) present in System32: $(Test-Path C:\Windows\System32\vulkan-1.dll)"
       - run: cargo build -p meetesh-core --features vulkan --example gpu_probe
       - name: Run the probe (no GPU here, so it should report a clean failure, not crash at startup)
