@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-latest, windows-latest]
+        os: [ubuntu-24.04, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     env:
       # whisper.cpp is compiled with -march=native by default. GitHub's runners differ in CPU model, and the
@@ -27,7 +27,7 @@ jobs:
         with:
           key: portable-ggml
       - name: Linux system libraries
-        if: matrix.os == 'ubuntu-22.04'
+        if: matrix.os == 'ubuntu-24.04'
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev libasound2-dev
@@ -35,15 +35,28 @@ jobs:
       - run: npm run build
       - run: cargo test --workspace
       - run: cargo build -p meetesh
+      - name: Parakeet engine (ONNX Runtime linked in)
+        run: cargo test -p meetesh-core --features parakeet --lib asr::parakeet
       # The GPU probe must keep compiling with the GPU backend the platform uses.
       - name: GPU probe builds (Metal)
         if: matrix.os == 'macos-latest'
         run: cargo build -p meetesh-core --example gpu_probe --features metal
       # Real transcription of the spoken fixture with the tiny model (NFR-16).
       - name: Whisper fixture test
-        if: matrix.os == 'ubuntu-22.04'
+        if: matrix.os == 'ubuntu-24.04'
         run: |
           curl -L --fail -o ggml-tiny.en.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin
+          mkdir parakeet
+          B=https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce
+          curl -L --fail -o parakeet/encoder-model.int8.onnx $B/encoder-model.int8.onnx
+          curl -L --fail -o parakeet/decoder_joint-model.int8.onnx $B/decoder_joint-model.int8.onnx
+          curl -L --fail -o parakeet/vocab.txt $B/vocab.txt
+          cat > parakeet.sha256 <<'EOS'
+          6139d2fa7e1b086097b277c7149725edbab89cc7c7ae64b23c741be4055aff09  parakeet/encoder-model.int8.onnx
+          eea7483ee3d1a30375daedc8ed83e3960c91b098812127a0d99d1c8977667a70  parakeet/decoder_joint-model.int8.onnx
+          d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d  parakeet/vocab.txt
+          EOS
+          sha256sum -c parakeet.sha256
           echo "921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f  ggml-tiny.en.bin" | sha256sum -c -
           MEETESH_TEST_MODEL=$PWD/ggml-tiny.en.bin cargo test -p meetesh-core --features whisper --test whisper_fixture --test whisper_live -- --nocapture
           MEETESH_TEST_MODEL=$PWD/ggml-tiny.en.bin cargo test -p meetesh-core --features whisper --test asr_quality faint_far -- --nocapture
@@ -125,7 +138,7 @@ jobs:
   # including Whisper and llama.cpp together in one process. Manual only: too heavy for every push.
   assist-model:
     if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -139,3 +152,7 @@ jobs:
         run: |
           MEETESH_TEST_ASSIST_MODEL=$PWD/gemma.gguf MEETESH_TEST_MODEL=$PWD/ggml-tiny.en.bin \
             cargo test -p meetesh-core --features "whisper llm" --test llm_hint --test whisper_and_llm --test hint_vs_live --test summary_real --test queue_real --test hint_memory_real --test points_real -- --nocapture --test-threads=1
+      - name: Parakeet real-model tests
+        run: |
+          MEETESH_TEST_PARAKEET=$PWD/parakeet cargo test --release -p meetesh-core --features parakeet --test parakeet_real -- --nocapture
+          MEETESH_TEST_PARAKEET=$PWD/parakeet cargo test --release -p meetesh-core --features parakeet --test asr_quality report_words -- --nocapture

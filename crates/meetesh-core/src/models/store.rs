@@ -60,23 +60,43 @@ impl ModelStore {
         ModelStore { dir: dir.into(), agent }
     }
 
+    /// The main file of a model (what loaders are pointed at).
     pub fn path(&self, e: &ModelEntry) -> PathBuf {
         self.dir.join(&e.file_name)
     }
 
-    fn part_path(&self, e: &ModelEntry) -> PathBuf {
-        self.dir.join(format!("{}.part", e.file_name))
+    /// The folder holding all of a model's files (the models directory itself for a loose file).
+    pub fn folder(&self, e: &ModelEntry) -> PathBuf {
+        match e.folder() {
+            "" => self.dir.clone(),
+            sub => self.dir.join(sub),
+        }
     }
 
-    /// Cheap check (size only). The checksum is verified once, at download time.
+    /// Cheap check (sizes only). Checksums are verified once, at download time. A model is installed
+    /// only when every one of its files is.
     pub fn is_installed(&self, e: &ModelEntry) -> bool {
-        fs::metadata(self.path(e)).map(|m| m.len() == e.size_bytes).unwrap_or(false)
+        files(e).all(|f| self.file_installed(&f))
+    }
+
+    fn file_path(&self, f: &FileSpec) -> PathBuf {
+        self.dir.join(f.file_name)
+    }
+
+    fn part_path(&self, f: &FileSpec) -> PathBuf {
+        self.dir.join(format!("{}.part", f.file_name))
+    }
+
+    fn file_installed(&self, f: &FileSpec) -> bool {
+        fs::metadata(self.file_path(f)).map(|m| m.len() == f.size_bytes).unwrap_or(false)
     }
 
     pub fn delete(&self, e: &ModelEntry) -> Result<()> {
-        for p in [self.path(e), self.part_path(e)] {
-            if p.exists() {
-                fs::remove_file(p)?;
+        for f in files(e) {
+            for p in [self.file_path(&f), self.part_path(&f)] {
+                if p.exists() {
+                    fs::remove_file(p)?;
+                }
             }
         }
         Ok(())
@@ -87,34 +107,69 @@ impl ModelStore {
         if self.is_installed(e) {
             return 0;
         }
-        fs::metadata(self.part_path(e)).map(|m| m.len().min(e.size_bytes)).unwrap_or(0)
+        files(e)
+            .map(|f| {
+                if self.file_installed(&f) {
+                    f.size_bytes
+                } else {
+                    fs::metadata(self.part_path(&f)).map(|m| m.len().min(f.size_bytes)).unwrap_or(0)
+                }
+            })
+            .sum()
     }
 
     /// Throw away an unfinished download.
     pub fn discard_partial(&self, e: &ModelEntry) -> Result<()> {
-        let p = self.part_path(e);
-        if p.exists() {
-            fs::remove_file(p)?;
+        for f in files(e) {
+            let p = self.part_path(&f);
+            if p.exists() {
+                fs::remove_file(p)?;
+            }
         }
         Ok(())
     }
 
-    /// Download (or resume) a model.
+    /// Download (or resume) a model: its main file first, then its companions. Progress is reported
+    /// over the whole model. A finished file is never fetched again, so a resume continues at the
+    /// file that was interrupted.
+    pub fn download(&self, e: &ModelEntry, mut on_progress: impl FnMut(DownloadProgress), cancel: &AtomicBool) -> Result<PathBuf> {
+        let total = e.total_bytes();
+        let mut done = 0u64;
+        for f in files(e) {
+            self.download_file(&e.id, &f, done, total, &mut on_progress, cancel)?;
+            done += f.size_bytes;
+        }
+        on_progress(DownloadProgress::Bytes { downloaded: total, total });
+        Ok(self.path(e))
+    }
+
+    /// One file. `before` bytes of the model are already done and `total` is the whole model, so
+    /// progress is for the model, not the file.
     ///
     /// The checksum is computed while the bytes arrive, so there is no slow second pass at 100%.
     /// Resuming first re-reads the partial file to continue the hash (reported as `Verifying`).
     /// If `cancel` is set the partial file is kept, so the next call resumes ("pause"). A checksum
     /// mismatch deletes the file.
-    pub fn download(&self, e: &ModelEntry, mut on_progress: impl FnMut(DownloadProgress), cancel: &AtomicBool) -> Result<PathBuf> {
-        fs::create_dir_all(&self.dir)?;
-        let final_path = self.path(e);
-        if self.is_installed(e) {
-            on_progress(DownloadProgress::Bytes { downloaded: e.size_bytes, total: e.size_bytes });
-            return Ok(final_path);
+    fn download_file(
+        &self,
+        id: &str,
+        f: &FileSpec,
+        before: u64,
+        total: u64,
+        on_progress: &mut impl FnMut(DownloadProgress),
+        cancel: &AtomicBool,
+    ) -> Result<()> {
+        let final_path = self.file_path(f);
+        if let Some(parent) = final_path.parent() {
+            fs::create_dir_all(parent)?;
         }
-        let part = self.part_path(e);
+        if self.file_installed(f) {
+            on_progress(DownloadProgress::Bytes { downloaded: before + f.size_bytes, total });
+            return Ok(());
+        }
+        let part = self.part_path(f);
         let mut have = fs::metadata(&part).map(|m| m.len()).unwrap_or(0);
-        if have > e.size_bytes {
+        if have > f.size_bytes {
             fs::remove_file(&part)?;
             have = 0;
         }
@@ -122,16 +177,16 @@ impl ModelStore {
         // Continue the hash over what is already on disk.
         let mut hasher = Sha256::new();
         if have > 0 {
-            on_progress(if have == e.size_bytes {
+            on_progress(if have == f.size_bytes {
                 DownloadProgress::Verifying
             } else {
-                DownloadProgress::Bytes { downloaded: have, total: e.size_bytes }
+                DownloadProgress::Bytes { downloaded: before + have, total }
             });
             hash_file_into(&mut hasher, &part, cancel)?;
         }
 
-        if have < e.size_bytes {
-            let mut req = self.agent.get(&e.url);
+        if have < f.size_bytes {
+            let mut req = self.agent.get(f.url);
             if have > 0 {
                 req = req.set("Range", &format!("bytes={have}-"));
             }
@@ -140,7 +195,7 @@ impl ModelStore {
                 Err(ureq::Error::Status(416, _)) => {
                     // our partial file is unusable; start over
                     let _ = fs::remove_file(&part);
-                    return self.download(e, on_progress, cancel);
+                    return self.download_file(id, f, before, total, on_progress, cancel);
                 }
                 Err(err) => return Err(Error::Other(format!("download failed: {err}"))),
             };
@@ -170,7 +225,7 @@ impl ModelStore {
                 have += n as u64;
                 since_report += n;
                 if since_report >= 256 * 1024 {
-                    on_progress(DownloadProgress::Bytes { downloaded: have, total: e.size_bytes });
+                    on_progress(DownloadProgress::Bytes { downloaded: before + have, total });
                     since_report = 0;
                 }
             }
@@ -178,24 +233,38 @@ impl ModelStore {
         }
 
         let size = fs::metadata(&part)?.len();
-        if size != e.size_bytes {
+        if size != f.size_bytes {
             // keep the partial file: it may just be a dropped connection, and a retry resumes
-            return Err(Error::Other(format!("download incomplete ({size} of {} bytes)", e.size_bytes)));
+            return Err(Error::Other(format!("download incomplete ({size} of {} bytes)", f.size_bytes)));
         }
-        if !hex(&hasher.finalize()).eq_ignore_ascii_case(&e.sha256) {
+        if !hex(&hasher.finalize()).eq_ignore_ascii_case(f.sha256) {
             let _ = fs::remove_file(&part);
-            return Err(Error::Other(format!("checksum mismatch for {}; the file was discarded", e.id)));
+            return Err(Error::Other(format!("checksum mismatch for {id} ({}); the file was discarded", f.file_name)));
         }
         fs::rename(&part, &final_path)?;
-        on_progress(DownloadProgress::Bytes { downloaded: e.size_bytes, total: e.size_bytes });
-        Ok(final_path)
+        Ok(())
     }
+}
+
+/// One file of a model, whether the main file or a companion.
+struct FileSpec<'a> {
+    file_name: &'a str,
+    url: &'a str,
+    sha256: &'a str,
+    size_bytes: u64,
+}
+
+/// The main file first, then the companions.
+fn files(e: &ModelEntry) -> impl Iterator<Item = FileSpec<'_>> {
+    std::iter::once(FileSpec { file_name: &e.file_name, url: &e.url, sha256: &e.sha256, size_bytes: e.size_bytes }).chain(
+        e.companions.iter().map(|c| FileSpec { file_name: &c.file_name, url: &c.url, sha256: &c.sha256, size_bytes: c.size_bytes }),
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::Role;
+    use crate::models::{Companion, Role};
     use std::io::{BufRead, BufReader};
     use std::net::TcpListener;
     use std::sync::atomic::AtomicU64;
@@ -252,6 +321,8 @@ mod tests {
             license: "MIT".into(),
             language: String::new(),
             min_ram_mb: 0,
+            engine: Default::default(),
+            companions: vec![],
         }
     }
 
@@ -393,6 +464,90 @@ mod tests {
         fs::write(dir.join("test.bin.part"), &bad).unwrap();
         let err = store(&dir).download(&e, |_| {}, &AtomicBool::new(false)).unwrap_err();
         assert!(err.to_string().contains("checksum"), "{err}");
+        fs::remove_dir_all(dir).ok();
+    }
+
+    /// A folder model: a main file plus two companions, each from its own server.
+    fn folder_entry(bodies: &[Vec<u8>; 3]) -> (ModelEntry, [Arc<AtomicU64>; 3]) {
+        let served: Vec<_> = bodies.iter().map(|b| serve(b.clone())).collect();
+        let mut e = entry(&served[0].0, &bodies[0]);
+        e.file_name = "folder/main.bin".into();
+        e.companions = (1..3)
+            .map(|i| {
+                let c = entry(&served[i].0, &bodies[i]);
+                Companion { file_name: format!("folder/extra{i}.bin"), url: c.url, sha256: c.sha256, size_bytes: c.size_bytes }
+            })
+            .collect();
+        (e, [served[0].1.clone(), served[1].1.clone(), served[2].1.clone()])
+    }
+
+    #[test]
+    fn a_model_made_of_several_files_downloads_into_its_folder_with_whole_model_progress() {
+        let bodies = [body(200_000), body(50_000), body(7_000)];
+        let (e, served) = folder_entry(&bodies);
+        let dir = tmp("folder");
+        let st = store(&dir);
+        assert!(!st.is_installed(&e));
+        let mut last = None;
+        let mut monotonic = true;
+        let main = st
+            .download(
+                &e,
+                |p| {
+                    if let DownloadProgress::Bytes { downloaded, total } = p {
+                        monotonic &= last.map_or(true, |l| downloaded >= l);
+                        assert_eq!(total, 257_000);
+                        last = Some(downloaded);
+                    }
+                },
+                &AtomicBool::new(false),
+            )
+            .unwrap();
+        assert!(monotonic, "progress went backwards");
+        assert_eq!(last, Some(257_000));
+        assert_eq!(main, dir.join("folder/main.bin"));
+        assert_eq!(st.folder(&e), dir.join("folder"));
+        assert_eq!(fs::read(dir.join("folder/extra2.bin")).unwrap(), bodies[2]);
+        assert!(st.is_installed(&e));
+        assert_eq!(e.total_bytes(), 257_000);
+        // (the test server counts a body after it has been written, so wait for the last count)
+        let settled = |s: &Arc<AtomicU64>, n: usize| {
+            for _ in 0..200 {
+                if s.load(Ordering::Relaxed) == n as u64 {
+                    return;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            panic!("server counted {} bytes, expected {n}", s.load(Ordering::Relaxed));
+        };
+        (0..3).for_each(|i| settled(&served[i], bodies[i].len()));
+
+        // A missing companion makes the model not installed, and only that file is fetched again.
+        fs::remove_file(dir.join("folder/extra1.bin")).unwrap();
+        assert!(!st.is_installed(&e));
+        assert_eq!(st.partial_bytes(&e), 200_000 + 7_000);
+        st.download(&e, |_| {}, &AtomicBool::new(false)).unwrap();
+        settled(&served[1], 2 * bodies[1].len()); // fetched again
+        assert_eq!(served[0].load(Ordering::Relaxed), bodies[0].len() as u64, "the main file must not be fetched again");
+        assert_eq!(served[2].load(Ordering::Relaxed), bodies[2].len() as u64);
+        assert!(st.is_installed(&e));
+
+        // Deleting removes every file.
+        st.delete(&e).unwrap();
+        assert!(!dir.join("folder/main.bin").exists() && !dir.join("folder/extra1.bin").exists() && !dir.join("folder/extra2.bin").exists());
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_corrupt_companion_is_rejected_and_the_model_stays_not_installed() {
+        let bodies = [body(10_000), body(5_000), body(3_000)];
+        let (mut e, _) = folder_entry(&bodies);
+        e.companions[1].sha256 = "0".repeat(64);
+        let dir = tmp("folder-bad");
+        let st = store(&dir);
+        let err = st.download(&e, |_| {}, &AtomicBool::new(false)).unwrap_err();
+        assert!(err.to_string().contains("checksum") && err.to_string().contains("extra2.bin"), "{err}");
+        assert!(!st.is_installed(&e));
         fs::remove_dir_all(dir).ok();
     }
 }

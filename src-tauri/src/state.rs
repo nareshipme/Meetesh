@@ -10,7 +10,8 @@ use meetesh_core::asr::whisper::WhisperTranscriber;
 use meetesh_core::assist::llama::LlamaAssistant;
 use meetesh_core::models::store::ModelStore;
 use meetesh_core::models::selection;
-use meetesh_core::models::{Manifest, ModelEntry, Profile, Role};
+use meetesh_core::asr::Transcriber;
+use meetesh_core::models::{Engine, Manifest, ModelEntry, Profile, Role};
 use meetesh_core::{Db, Error, Result};
 use tauri::{AppHandle, Manager};
 
@@ -73,7 +74,7 @@ pub struct AppState {
     pub manifest: Manifest,
     pub models: ModelStore,
     /// Loaded model, reused between transcriptions. Reloaded when the active model changes.
-    pub transcriber: Mutex<Option<Arc<WhisperTranscriber>>>,
+    pub transcriber: Mutex<Option<Arc<dyn Transcriber>>>,
     pub job: Mutex<Option<TranscriptionJob>>,
     /// Loaded language models by manifest id (a few GB each). The hints model stays loaded; a
     /// different notes model is loaded when it is needed and released afterwards.
@@ -230,17 +231,25 @@ pub fn release_unused_assistants(app: &AppHandle) {
 }
 
 /// Load (or reuse) the speech model. Shared by live and full-recording transcription.
-pub fn get_transcriber(app: &AppHandle) -> Result<Arc<WhisperTranscriber>> {
+pub fn get_transcriber(app: &AppHandle) -> Result<Arc<dyn Transcriber>> {
     let st = app.state::<AppState>();
     let entry = st.asr_model()?.clone();
     let mut cached = st.transcriber.lock().unwrap();
     if let Some(t) = cached.as_ref() {
-        if meetesh_core::Transcriber::model_id(t.as_ref()) == entry.id {
+        if t.model_id() == entry.id {
             return Ok(t.clone());
         }
     }
-    let lang = if entry.language.is_empty() { None } else { Some(entry.language.as_str()) };
-    let t = Arc::new(WhisperTranscriber::load(&entry.id, &st.models.path(&entry), lang)?);
+    let t: Arc<dyn Transcriber> = match entry.engine {
+        Engine::Whisper => {
+            let lang = if entry.language.is_empty() { None } else { Some(entry.language.as_str()) };
+            Arc::new(WhisperTranscriber::load(&entry.id, &st.models.path(&entry), lang)?)
+        }
+        #[cfg(feature = "parakeet-engine")]
+        Engine::Parakeet => Arc::new(meetesh_core::asr::parakeet::ParakeetTranscriber::load(&entry.id, &st.models.folder(&entry))?),
+        #[cfg(not(feature = "parakeet-engine"))]
+        Engine::Parakeet => return Err(Error::Other("This build of Meetesh does not include the Parakeet speech engine".into())),
+    };
     *cached = Some(t.clone());
     Ok(t)
 }

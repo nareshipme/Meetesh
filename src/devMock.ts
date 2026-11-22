@@ -48,6 +48,7 @@ const CATALOG = [
   { id: "whisper-tiny.en", role: "asr", name: "Whisper Tiny (English)", description: "Fastest, lowest accuracy.", size: 77_704_715, license: "MIT" },
   { id: "whisper-base.en", role: "asr", name: "Whisper Base (English)", description: "Good balance of speed and accuracy for most laptops.", size: 147_964_211, license: "MIT" },
   { id: "whisper-small.en-q5_1", role: "asr", name: "Whisper Small (English, compact)", description: "More accurate than Base, about twice as slow.", size: 190_098_681, license: "MIT" },
+  { id: "parakeet-tdt-0.6b-v3-int8", role: "asr", name: "Parakeet TDT 0.6B v3 (25 European languages)", description: "NVIDIA's speech model: fast, writes punctuation, detects the language. On our synthetic test speech it makes fewer errors than Whisper Base on normal audio, but did worse on very faint, distant microphones. 670 MB. Does not cover Hindi or other Indian languages.", size: 670_479_942, license: "CC-BY-4.0" },
   { id: "gemma-3-1b-it", role: "assist", name: "Gemma 3 1B (fast)", description: "About 1.5 times faster and under 1 GB of memory, but hints are more generic.", size: 806_058_272, license: "Gemma terms" },
   { id: "gemma-4-e2b-it", role: "assist", name: "Gemma 4 E2B", description: "The default: good hints, needs about 4 GB of memory.", size: 3_106_738_272, license: "Apache-2.0" },
   { id: "gemma-3-4b-it", role: "assist", name: "Gemma 3 4B", description: "Larger and about 2 times slower than Gemma 4 E2B; offered as an alternative.", size: 2_489_894_016, license: "Gemma terms" },

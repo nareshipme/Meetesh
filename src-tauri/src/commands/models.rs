@@ -65,7 +65,7 @@ pub fn list_models(state: State<AppState>) -> Vec<ModelInfo> {
             role: m.role,
             name: m.name.clone(),
             description: m.description.clone(),
-            size_bytes: m.size_bytes,
+            size_bytes: m.total_bytes(),
             license: m.license.clone(),
             installed: state.models.is_installed(m),
             partial_bytes: state.models.partial_bytes(m),
@@ -110,13 +110,13 @@ pub fn download_model(app: AppHandle, state: State<AppState>, id: String) -> Res
     state.download_cancel.store(false, Ordering::Relaxed);
     std::thread::spawn(move || {
         let st = app.state::<AppState>();
-        let ev = |phase, downloaded, error| DownloadEvent { id: entry.id.clone(), phase, downloaded, total: entry.size_bytes, error };
+        let ev = |phase, downloaded, error| DownloadEvent { id: entry.id.clone(), phase, downloaded, total: entry.total_bytes(), error };
         let result = st.models.download(
             &entry,
             |p| {
                 let e = match p {
                     DownloadProgress::Bytes { downloaded, .. } => ev(DownloadPhase::Downloading, downloaded, None),
-                    DownloadProgress::Verifying => ev(DownloadPhase::Verifying, entry.size_bytes, None),
+                    DownloadProgress::Verifying => ev(DownloadPhase::Verifying, entry.total_bytes(), None),
                 };
                 let _ = app.emit(MODEL_DOWNLOAD, e);
             },
@@ -125,7 +125,7 @@ pub fn download_model(app: AppHandle, state: State<AppState>, id: String) -> Res
         *st.downloading.lock().unwrap() = false;
         let partial = st.models.partial_bytes(&entry);
         let last = match result {
-            Ok(_) => ev(DownloadPhase::Done, entry.size_bytes, None),
+            Ok(_) => ev(DownloadPhase::Done, entry.total_bytes(), None),
             // "Pause": the partial file is kept so the download can continue later.
             Err(Error::Cancelled) => ev(DownloadPhase::Paused, partial, None),
             Err(e) => {

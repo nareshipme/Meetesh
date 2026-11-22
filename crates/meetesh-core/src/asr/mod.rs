@@ -1,12 +1,14 @@
 //! Speech recognition: a backend-agnostic `Transcriber` trait, a voice-activity chunker, and
 //! helpers that turn recordings (finished or live) into timestamped transcript segments.
 //!
-//! Whisper (whisper.cpp) is one backend behind the `whisper` feature. Models are chosen by id
+//! Whisper (whisper.cpp, `whisper` feature) and Parakeet (ONNX Runtime, `parakeet` feature) are backends. Models are chosen by id
 //! from the manifest, never named in logic (NFR-21).
 
 pub mod chunker;
 pub mod live;
 pub mod run;
+#[cfg(feature = "parakeet-engine")]
+pub mod parakeet;
 #[cfg(feature = "whisper")]
 pub mod whisper;
 

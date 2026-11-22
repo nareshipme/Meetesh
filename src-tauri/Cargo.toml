@@ -10,6 +10,13 @@ name = "meetesh_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [features]
+# NVIDIA Parakeet speech engine (ONNX Runtime is downloaded at build time and linked in).
+default = ["parakeet"]
+parakeet = ["parakeet-engine", "meetesh-core/parakeet"]
+# Same engine, with ONNX Runtime loaded at run time from ORT_DYLIB_PATH. For build machines that
+# cannot download it: `cargo build --no-default-features --features parakeet-dynamic`.
+parakeet-dynamic = ["parakeet-engine", "meetesh-core/parakeet-dynamic"]
+parakeet-engine = []
 # GPU acceleration for live assist on Windows and Linux. See the README ("GPU acceleration").
 vulkan = ["meetesh-core/vulkan"]
 
