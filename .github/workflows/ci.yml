@@ -59,13 +59,12 @@ jobs:
   # loader start on a machine with no GPU? Informational for now (it decides whether Vulkan can become the
   # default on Windows), so it may fail without failing the workflow.
   windows-vulkan:
-    runs-on: windows-latest
+    # windows-latest has Visual Studio 18 and CMake 4.5; the first two runs there failed inside llama.cpp's
+    # vulkan-shaders-gen sub-build ("CMake error: Not a file: ...cmake_install.cmake", "cannot find the batch
+    # label specified - VCEnd"), with the default and with a short target folder, so it is not a path-length
+    # problem. llama.cpp's own Windows Vulkan CI uses VS 2022, so try that.
+    runs-on: windows-2022
     continue-on-error: true
-    env:
-      # The first run failed inside llama.cpp's vulkan-shaders-gen sub-build with
-      # "CMake error: Not a file: ...\cmake_install.cmake": its build path is longer than the Windows
-      # 260-character limit under the default target folder. A short target folder avoids it.
-      CARGO_TARGET_DIR: C:\t
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
