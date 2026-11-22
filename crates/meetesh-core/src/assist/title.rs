@@ -1,10 +1,9 @@
 //! A short title for a meeting, written from its finished notes by the on-device model.
 
 use crate::assist::prompt::{strip_thinking, truncate_chars};
-use crate::assist::{Assistant, ChatMessage, ChatRole, GenOptions};
+use crate::assist::summary::{ask, SummaryRun};
+use crate::assist::{Assistant, ChatMessage, ChatRole};
 use crate::Result;
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
 
 const MAX_TITLE_CHARS: usize = 60;
 const MAX_WORDS: usize = 9;
@@ -48,20 +47,18 @@ pub fn clean_title(raw: &str) -> Option<String> {
     Some(first.to_uppercase().collect::<String>() + chars.as_str())
 }
 
-/// Ask the model for a title. `Ok(None)` if it answered with something unusable.
-pub fn generate_title(a: &dyn Assistant, notes_markdown: &str, cancel: Arc<AtomicBool>) -> Result<Option<String>> {
-    let opts = GenOptions { max_tokens: 28, temperature: 0.2, ..GenOptions::hint(cancel) };
-    let c = a.complete(&title_messages(notes_markdown), &opts, &mut |_| true)?;
-    if c.stats.cancelled {
-        return Err(crate::Error::Cancelled);
-    }
-    Ok(clean_title(&c.text))
+/// Ask the model for a title. `Ok(None)` if it answered with something unusable. Runs under the same
+/// background rules as the notes (it waits for a hint or a recording rather than competing).
+pub fn generate_title(a: &dyn Assistant, notes_markdown: &str, run: &SummaryRun) -> Result<Option<String>> {
+    Ok(clean_title(&ask(a, run, &title_messages(notes_markdown), 28)?))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::assist::{Completion, GenStats};
+    use crate::assist::{Completion, GenOptions, GenStats};
+    use std::sync::atomic::AtomicBool;
+    use std::sync::Arc;
 
     struct Say(&'static str);
     impl Assistant for Say {
@@ -101,8 +98,8 @@ mod tests {
 
     #[test]
     fn generate_returns_the_cleaned_title_or_none() {
-        let cancel = Arc::new(AtomicBool::new(false));
-        assert_eq!(generate_title(&Say("\"Launch planning.\""), "notes", cancel.clone()).unwrap().as_deref(), Some("Launch planning"));
-        assert_eq!(generate_title(&Say(""), "notes", cancel).unwrap(), None);
+        let run = SummaryRun::plain(Arc::new(AtomicBool::new(false)));
+        assert_eq!(generate_title(&Say("\"Launch planning.\""), "notes", &run).unwrap().as_deref(), Some("Launch planning"));
+        assert_eq!(generate_title(&Say(""), "notes", &run).unwrap(), None);
     }
 }

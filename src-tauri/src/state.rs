@@ -51,6 +51,15 @@ pub struct SummaryJob {
     pub cancel: Arc<AtomicBool>,
 }
 
+/// Meeting notes are written one meeting at a time, in the order they were asked for, by one
+/// background worker. Asking for more just adds to the line.
+#[derive(Default)]
+pub struct NotesQueue {
+    pub waiting: std::collections::VecDeque<i64>,
+    pub running: Option<SummaryJob>,
+    pub worker_alive: bool,
+}
+
 pub struct AppState {
     /// Hints offered by themselves while recording (opt-in).
     pub auto_hints: Arc<crate::auto_hints::AutoHints>,
@@ -70,7 +79,9 @@ pub struct AppState {
     /// Explicit model choices per slot (see `models::selection`), mirrored in the settings table.
     pub selection: Mutex<HashMap<Role, String>>,
     pub hint_job: Mutex<Option<HintJob>>,
-    pub summary_job: Mutex<Option<SummaryJob>>,
+    pub notes: Mutex<NotesQueue>,
+    /// Who gets the processor: hints before notes, and notes wait while a recording runs (on a CPU).
+    pub gate: Arc<meetesh_core::assist::gate::ModelGate>,
     /// Live transcription chunks queued or in progress. Hint generation yields while this is above
     /// zero, so a hint never makes the live transcript lag.
     pub asr_pending: Arc<AtomicUsize>,
@@ -112,7 +123,8 @@ impl AppState {
             assistants: Mutex::new(HashMap::new()),
             selection: Mutex::new(stored_selection),
             hint_job: Mutex::new(None),
-            summary_job: Mutex::new(None),
+            notes: Mutex::new(NotesQueue::default()),
+            gate: meetesh_core::assist::gate::ModelGate::new(),
             asr_pending: Arc::new(AtomicUsize::new(0)),
             runtime: Mutex::new(HashMap::new()),
             download_cancel: Arc::new(AtomicBool::new(false)),

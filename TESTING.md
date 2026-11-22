@@ -120,7 +120,11 @@ MEETESH_TEST_MODEL=/path/to/ggml-tiny.en.bin \
 - [ ] Record a short meeting with at least a couple of sentences of real content (decisions and who-does-what make it easier to judge), then **Stop**. After the live transcript settles, a "Notes" section shows "Writing notes…" with a progress bar by itself, then a summary, decisions and action items.
 - [ ] The notes are faithful: nothing invented (names, dates, numbers), decisions and action items match what was said. Note anything wrong or missing, with how long the meeting was and how long the notes took (the log has `summary for meeting N: … ms`).
 - [ ] **Copy** puts Markdown on the clipboard. **Regenerate** writes new notes from the current transcript. **Remove** clears them (**✦ Write meeting notes** appears).
-- [ ] **Cancel** during writing keeps any earlier notes. Starting a new recording while notes are being written cancels the notes (live transcription must not lag).
+- [ ] **Cancel** during writing keeps any earlier notes.
+- [ ] Background and in line: stop two recordings one after the other. The first meeting writes its notes; the second shows "Waiting for its turn: 1 ahead" and starts by itself. **Cancel** on a waiting one takes it out of the line.
+- [ ] Start a new recording while notes are being written: on a machine without a GPU the Notes tab shows "Paused while you record" (not cancelled), live text keeps up, and after you stop, the notes carry on and finish by themselves. With the GPU row saying "GPU", the notes keep running during the recording.
+- [ ] Ask for a **✦ Hint** while notes are being written: the hint appears as fast as usual; the Notes tab shows "Paused while a hint is written" for a moment and then carries on.
+- [ ] Delete a meeting whose notes are waiting: nothing breaks, the next one starts.
 - [ ] A very short meeting (a few words) gets no automatic notes; the button still works if there is a transcript.
 - [ ] Import a long recording (30+ minutes, or record one): notes still come out, in steps ("step 2 of 5"), and take minutes on a CPU, not hours. Report the time and whether the row says GPU or CPU.
 - [ ] Without the live-assist model downloaded, the button is greyed with a tooltip, and no notes are written automatically.

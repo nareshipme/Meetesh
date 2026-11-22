@@ -10,7 +10,6 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
 use crate::capture;
-use crate::commands::summary;
 use crate::commands::transcription::start_transcription;
 use crate::events::RECORDING_LEVEL;
 use crate::live::{finish_live, live_sink};
@@ -54,8 +53,9 @@ pub fn start_recording(
         return Err(Error::Other("A recording is already in progress".into()));
     }
     let meeting = state.db.lock().unwrap().begin_recording(meeting_id, &state.recordings_root)?;
-    // Notes for an earlier meeting must not compete with a live recording; they can be started again later.
-    summary::cancel_running(&state);
+    // Notes for an earlier meeting are not cancelled: on a processor-bound machine they pause until
+    // this recording is over, then carry on (see `ModelGate`).
+    state.gate.set_recording(true);
 
     let level_app = app.clone();
     let mut sinks: Vec<Box<dyn FrameSink>> = vec![
@@ -85,6 +85,7 @@ pub fn start_recording(
             // Could not open the microphone: undo everything so no empty meeting is left behind.
             let _ = session.stop();
             let _ = state.db.lock().unwrap().abort_recording(meeting.id);
+            state.gate.set_recording(false);
             return Err(Error::Other(e));
         }
     };
@@ -155,6 +156,7 @@ pub fn stop_recording(app: AppHandle, state: State<AppState>) -> Result<Meeting>
         .take()
         .ok_or_else(|| Error::Other("No recording in progress".into()))?;
     state.auto_hints.end();
+    state.gate.set_recording(false); // paused notes may carry on
     rec.capture.stop(); // stop the capture first, then drain the pipeline
     let report = rec.session.stop();
     if let Some(system) = rec.system {

@@ -75,7 +75,7 @@ pub fn run() {
             assist::set_auto_hints,
             summary::summarize_meeting,
             summary::cancel_summary,
-            summary::active_summary,
+            summary::summary_status,
             summary::clear_summary
         ])
         .run(tauri::generate_context!())
