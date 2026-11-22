@@ -39,6 +39,7 @@ jobs:
           curl -L --fail -o ggml-tiny.en.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin
           echo "921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f  ggml-tiny.en.bin" | sha256sum -c -
           MEETESH_TEST_MODEL=$PWD/ggml-tiny.en.bin cargo test -p meetesh-core --features whisper --test whisper_fixture --test whisper_live -- --nocapture
+          MEETESH_TEST_MODEL=$PWD/ggml-tiny.en.bin cargo test -p meetesh-core --features whisper --test asr_quality faint_far -- --nocapture
 
   # The opt-in Vulkan build (Windows/Linux GPU) must keep compiling and passing its unit tests.
   vulkan-build:

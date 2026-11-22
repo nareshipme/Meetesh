@@ -30,11 +30,23 @@ pub fn transcribe_recording(
     dir: &Path,
     t: &dyn Transcriber,
     cancel: &AtomicBool,
+    on_progress: impl FnMut(f32),
+    on_segments: impl FnMut(&[TranscriptSegment]),
+) -> Result<Vec<TranscriptSegment>> {
+    transcribe_recording_with(dir, t, ChunkerConfig::default(), cancel, on_progress, on_segments)
+}
+
+/// Like `transcribe_recording`, with explicit chunking/enhancement settings (used to compare them).
+pub fn transcribe_recording_with(
+    dir: &Path,
+    t: &dyn Transcriber,
+    cfg: ChunkerConfig,
+    cancel: &AtomicBool,
     mut on_progress: impl FnMut(f32),
     mut on_segments: impl FnMut(&[TranscriptSegment]),
 ) -> Result<Vec<TranscriptSegment>> {
     let total = (wav::duration_ms(dir)? * crate::audio::TARGET_RATE as u64 / 1000).max(1) as f32;
-    let mut chunker = Chunker::new(ChunkerConfig::default());
+    let mut chunker = Chunker::new(cfg);
     let mut all = vec![];
     let mut done = 0f32;
 
