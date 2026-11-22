@@ -4,6 +4,7 @@
 
 use meetesh_core::models::{ModelEntry, Role};
 use meetesh_core::Result;
+use meetesh_core::assist::llama::LlamaAssistant;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::events::{LoadState, ModelLoadEvent, MODEL_LOAD};
@@ -67,6 +68,10 @@ fn load_blocking(app: &AppHandle, entry: &ModelEntry) {
     }
 }
 
+/// Shown instead of plain "CPU" when the app was built without a GPU backend, so nobody wonders why
+/// a computer with a GPU is not using it.
+pub const NO_GPU_BUILD: &str = "CPU (no GPU support in this build)";
+
 /// Returns the backend label ("GPU" or "CPU") once the model is loaded and warmed up.
 fn load_one(app: &AppHandle, entry: &ModelEntry) -> Result<String> {
     match entry.role {
@@ -96,7 +101,11 @@ fn load_one(app: &AppHandle, entry: &ModelEntry) -> Result<String> {
                 log::warn!("GPU failed while warming up {} ({reason}); using the CPU", entry.id);
                 return Ok("CPU (GPU failed)".into());
             }
-            Ok(if assistant.uses_gpu() { "GPU" } else { "CPU" }.into())
+            if assistant.uses_gpu() {
+                return Ok("GPU".into());
+            }
+            // On the CPU. Say why when the cause is that this build has no GPU support at all.
+            Ok(if LlamaAssistant::compiled_gpu_backend().is_none() { NO_GPU_BUILD } else { "CPU" }.into())
         }
         Role::Summary => Ok("CPU".into()),
     }

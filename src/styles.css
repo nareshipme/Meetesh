@@ -124,7 +124,8 @@ progress { flex: 1; min-width: 100px; max-width: 320px; height: 8px; accent-colo
 .small { font-size: 12px; margin: 0; }
 
 /* ---------- transcript ---------- */
-.transcript { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.transcript { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
+.jump-latest { position: absolute; right: 18px; bottom: 34px; box-shadow: 0 2px 8px rgba(0,0,0,.25); }
 .transcript-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .transcript h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); display: flex; align-items: center; gap: 8px; }
 .live-badge { color: var(--danger); font-weight: 700; display: inline-flex; align-items: center; gap: 5px; letter-spacing: .04em; }

@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, AutoHintMode, Meeting, ModelLoadEvent, TranscriptSegment } from "../api";
 import type { Notify } from "../hooks/useToasts";
+import { useFollowBottom } from "../hooks/useFollowBottom";
 import { useHint } from "../hooks/useHint";
 import { errorText, fmtDuration } from "../lib/format";
 import HintPanel from "./HintPanel";
@@ -18,8 +19,6 @@ interface Props {
 export default function Transcript({ meeting, modelReady, assistReady, assistLoad, recording, notify, onChange }: Props) {
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const [progress, setProgress] = useState<number | null>(null);
-  const bodyRef = useRef<HTMLDivElement>(null);
-  const stickToBottom = useRef(true);
   const hint = useHint(meeting.id, notify);
   const [autoMode, setAutoMode] = useState<AutoHintMode>("off");
   useEffect(() => {
@@ -84,16 +83,9 @@ export default function Transcript({ meeting, modelReady, assistReady, assistLoa
     };
   }, [meeting.id, load, notify, onChange]);
 
-  // Follow new live text, but only while the reader is already at the bottom.
-  useEffect(() => {
-    const el = bodyRef.current;
-    if (el && recording && stickToBottom.current) el.scrollTop = el.scrollHeight;
-  }, [segments, recording]);
-
-  function onScroll() {
-    const el = bodyRef.current;
-    if (el) stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-  }
+  // Follow new live text while recording or transcribing, unless the reader scrolled up.
+  const follow = useFollowBottom<HTMLDivElement>(recording || progress !== null, [segments]);
+  useEffect(() => follow.reset(), [meeting.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function run() {
     try {
@@ -188,7 +180,7 @@ export default function Transcript({ meeting, modelReady, assistReady, assistLoa
 
       <HintPanel state={hint.state} onCancel={hint.cancel} onDismiss={hint.dismiss} />
 
-      <div className="transcript-body" ref={bodyRef} onScroll={onScroll}>
+      <div className="transcript-body" ref={follow.ref} onScroll={follow.onScroll}>
         {segments.length > 0 ? (
           <ol className="segments">
             {segments.map((s, i) => (
@@ -215,6 +207,11 @@ export default function Transcript({ meeting, modelReady, assistReady, assistLoa
           </p>
         )}
       </div>
+      {follow.behind && (
+        <button className="btn btn-sm btn-primary jump-latest" onClick={follow.jump}>
+          ↓ Latest
+        </button>
+      )}
       {meeting.transcript_model && segments.length > 0 && (
         <small className="muted model-note">Model: {meeting.transcript_model}</small>
       )}

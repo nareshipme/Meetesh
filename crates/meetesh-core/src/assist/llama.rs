@@ -119,6 +119,18 @@ impl LlamaAssistant {
         })
     }
 
+    /// The GPU backend this build was compiled with: "Metal" or "Vulkan". `None` means the build can only
+    /// use the CPU, whatever hardware the computer has (Windows and Linux need `--features vulkan`).
+    pub fn compiled_gpu_backend() -> Option<&'static str> {
+        if cfg!(feature = "metal") {
+            Some("Metal")
+        } else if cfg!(feature = "vulkan") {
+            Some("Vulkan")
+        } else {
+            None
+        }
+    }
+
     /// Whether requests currently run on the GPU.
     pub fn uses_gpu(&self) -> bool {
         self.state.lock().unwrap().gpu

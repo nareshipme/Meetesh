@@ -120,11 +120,18 @@ function Row({ m, ms }: { m: ModelInfo; ms: ModelsState }) {
   } else if (rt?.state === "ready") {
     dot = "dot-ok";
     const gpuFailed = rt.backend?.includes("GPU failed");
+    const noGpuBuild = rt.backend?.includes("no GPU support");
     status = (
       <>
         <small className={gpuFailed ? "warn" : "muted"}>
           {ROLE_LABEL[m.role]} · ready{rt.backend ? ` · ${rt.backend}` : ""}
         </small>
+        {noGpuBuild && (
+          <small className="muted">
+            This build can only use the CPU, even if the computer has a GPU. On Windows and Linux, build with GPU support:{" "}
+            <code>npm run tauri:gpu</code> (needs the Vulkan SDK, see the README).
+          </small>
+        )}
         {gpuFailed && (
           <small className="muted">
             The GPU could not run this model, so the CPU is used. The reason is in the log{ms.logDir ? `: ${ms.logDir}` : ""}

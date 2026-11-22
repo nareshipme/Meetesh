@@ -13,12 +13,19 @@ jobs:
       matrix:
         os: [ubuntu-22.04, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    env:
+      # whisper.cpp is compiled with -march=native by default. GitHub's runners differ in CPU model, and the
+      # cache restores a build made on another one, so the real-Whisper test died with SIGILL (illegal
+      # instruction) on an Ubuntu runner. A portable build also is what any released binary must be.
+      GGML_NATIVE: "OFF"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: portable-ggml
       - name: Linux system libraries
         if: matrix.os == 'ubuntu-22.04'
         run: |
@@ -54,6 +61,48 @@ jobs:
           sudo apt-get install -y libvulkan-dev glslc spirv-headers
       - run: cargo test -p meetesh-core --features vulkan --lib
       - run: cargo build -p meetesh-core --features vulkan --example gpu_probe
+
+  # Windows GPU (Vulkan): does it build with the LunarG SDK, and does a program linked against the Vulkan
+  # loader start on a machine with no GPU? Informational for now (it decides whether Vulkan can become the
+  # default on Windows), so it may fail without failing the workflow.
+  windows-vulkan:
+    # Three runs have now failed the same way inside llama.cpp's vulkan-shaders-gen sub-build with the Visual
+    # Studio generator: "CMake error: Not a file: ...cmake_install.cmake" and "cannot find the batch label
+    # specified - VCEnd". It happens on windows-latest (VS 18, CMake 4.5) and on windows-2022 (VS 2022), with the
+    # default and with a short target folder, so it is neither the VS version nor the 260-character path limit.
+    # The SDK itself is fine (glslc found, CMake "Found Vulkan", vulkan-1.dll present on the runner). With the Ninja
+    # generator (below) the build succeeds in about 8 minutes and the probe starts.
+    runs-on: windows-2022
+    continue-on-error: true
+    env:
+      CMAKE_GENERATOR: Ninja
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ninja
+      # Ninja needs the Visual C++ compiler environment (cl.exe on PATH).
+      - uses: ilammy/msvc-dev-cmd@v1.13.0
+      - name: Install the Vulkan SDK
+        shell: pwsh
+        run: |
+          choco install vulkan-sdk -y --no-progress
+          $sdk = (Get-ChildItem C:\VulkanSDK | Sort-Object Name -Descending | Select-Object -First 1).FullName
+          "VULKAN_SDK=$sdk" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "$sdk\Bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+          Write-Host "Vulkan SDK at $sdk"
+          & "$sdk\Bin\glslc.exe" --version
+          Write-Host "vulkan-1.dll (the loader) present in System32: $(Test-Path C:\Windows\System32\vulkan-1.dll)"
+          Get-Command ninja
+      - run: cargo build -p meetesh-core --features vulkan --example gpu_probe
+      # No model file and no GPU here, so the probe exits with 2 ("Model file not found"). What this checks is
+      # that a program linked against the Vulkan loader starts at all and gets as far as asking for the model.
+      - name: The Vulkan-linked probe starts
+        shell: pwsh
+        run: |
+          cargo run -p meetesh-core --features vulkan --example gpu_probe
+          if ($LASTEXITCODE -eq 2) { exit 0 }
 
   # NFR-22: the platform-neutral core must keep compiling for mobile targets.
   # Not yet verified in CI; allowed to fail until the first run shows what is needed.

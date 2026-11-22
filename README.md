@@ -145,9 +145,22 @@ Only the live-assist model (llama.cpp) can use the GPU. Speech recognition runs 
 | Platform | How |
 |---|---|
 | macOS | Metal is compiled in automatically. If it fails on your Mac the app falls back to the CPU (see Troubleshooting). |
-| Windows, Linux | Opt-in Vulkan (works with NVIDIA, AMD and Intel GPUs). Install the Vulkan SDK first (Windows: LunarG SDK; Ubuntu: `sudo apt install libvulkan-dev glslc spirv-headers`), then run `npm run tauri dev -- --features vulkan`. |
+| Windows, Linux | **Opt-in** Vulkan (a normal build has no GPU support at all, and the sidebar then says "CPU (no GPU support in this build)") (works with NVIDIA, AMD and Intel GPUs). Install the Vulkan SDK first (Windows: LunarG SDK; Ubuntu: `sudo apt install libvulkan-dev glslc spirv-headers`), then run `npm run tauri:gpu` (the same as `npm run tauri dev -- --features vulkan`). |
+
+**Windows Vulkan build.** It builds, but only with the Ninja generator. With the default Visual Studio generator, llama.cpp's shader generator fails (`CMake error : Not a file: ...cmake_install.cmake`, "cannot find the batch label specified - VCEnd"), on Visual Studio 2022 and 18 alike and with short paths, so this is not the path limit or the Visual Studio version. CI shows the following works on a clean machine: install the LunarG Vulkan SDK and Ninja, open an **x64 Native Tools Command Prompt for VS**, then
+
+```bat
+set CMAKE_GENERATOR=Ninja
+npm run tauri:gpu
+```
+
+CI built it this way in about 8 minutes and a program linked against the Vulkan loader started (the runner has no GPU, so nothing was run on one). **Whether it uses your GPU and how fast is not yet verified**; the live-assist row should say "GPU", and please send the time a hint takes.
 
 The Vulkan build has been verified to compile, load the model onto a Vulkan device and generate with it on Linux using a software Vulkan driver (so the speed on a real GPU is not yet measured). CUDA is not wired up yet.
+
+### Building a binary to give to other people
+
+By default whisper.cpp is compiled for the CPU of the machine that builds it (`-march=native`), which is fastest for you but crashes with "illegal instruction" on an older CPU. For anything you distribute, build with `GGML_NATIVE=OFF` (CI does, after a real SIGILL on a CI runner whose cached build came from a different CPU model). llama.cpp already avoids native code unless you set `RUSTFLAGS=-C target-cpu=native`.
 
 ## How it works
 
