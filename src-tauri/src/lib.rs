@@ -8,6 +8,7 @@
 //! - `capture`: microphone capture (platform specific)
 //! - `system_audio`: capturing the other participants (platform specific)
 
+mod auto_hints;
 mod capture;
 mod commands;
 mod events;
@@ -65,6 +66,8 @@ pub fn run() {
             assist::cancel_hint,
             assist::assist_ready,
             assist::active_hint,
+            assist::get_auto_hints,
+            assist::set_auto_hints,
             summary::summarize_meeting,
             summary::cancel_summary,
             summary::active_summary,

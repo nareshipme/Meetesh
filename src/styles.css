@@ -206,3 +206,5 @@ progress { flex: 1; min-width: 100px; max-width: 320px; height: 8px; accent-colo
 .notes-body p { margin: 0 0 6px; line-height: 1.5; }
 .notes-body ul { margin: 0 0 6px; padding-left: 20px; }
 .notes-body li { margin: 2px 0; line-height: 1.45; }
+
+.auto-hints { font-size: 12px; padding: 3px 6px; max-width: 210px; }

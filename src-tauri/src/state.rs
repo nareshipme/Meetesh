@@ -51,6 +51,8 @@ pub struct SummaryJob {
 }
 
 pub struct AppState {
+    /// Hints offered by themselves while recording (opt-in).
+    pub auto_hints: Arc<crate::auto_hints::AutoHints>,
     pub db: Mutex<Db>,
     pub recordings_root: PathBuf,
     pub active: Mutex<Option<ActiveRecording>>,
@@ -83,7 +85,12 @@ impl AppState {
         if !recovered.is_empty() {
             log::warn!("recovered {} interrupted recording(s)", recovered.len());
         }
+        let auto_mode = db
+            .get_setting(crate::commands::assist::AUTO_HINTS_KEY)?
+            .map(|s| meetesh_core::assist::trigger::AutoHintMode::parse(&s))
+            .unwrap_or_default();
         Ok(AppState {
+            auto_hints: Arc::new(crate::auto_hints::AutoHints::new(auto_mode)),
             db: Mutex::new(db),
             recordings_root: data_dir.join("recordings"),
             active: Mutex::new(None),

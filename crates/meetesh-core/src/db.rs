@@ -54,6 +54,8 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE meetings ADD COLUMN title_source TEXT NOT NULL DEFAULT 'default';
      UPDATE meetings SET title_source = 'user'
       WHERE NOT (title GLOB 'Meeting [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]');",
+    // 9: small app settings that must survive restarts (key/value)
+    "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
 ];
 
 /// Values of `Meeting::title_source`.
@@ -267,6 +269,21 @@ impl Db {
             return Err(Error::NotFound(id));
         }
         self.get_meeting(id)
+    }
+
+    pub fn get_setting(&self, key: &str) -> Result<Option<String>> {
+        Ok(self
+            .conn
+            .query_row("SELECT value FROM settings WHERE key = ?1", params![key], |r| r.get(0))
+            .optional()?)
+    }
+
+    pub fn set_setting(&self, key: &str, value: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![key, value],
+        )?;
+        Ok(())
     }
 
     pub fn set_agenda(&self, id: i64, agenda: &str) -> Result<Meeting> {
@@ -636,5 +653,16 @@ mod tests {
         assert_eq!(by_title("Meeting with Sam"), "user", "only the exact date placeholder counts as untouched");
         drop(db);
         std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn settings_are_stored_and_overwritten() {
+        let db = Db::open_in_memory().unwrap();
+        assert_eq!(db.get_setting("auto_hints").unwrap(), None);
+        db.set_setting("auto_hints", "questions").unwrap();
+        db.set_setting("other", "x").unwrap();
+        db.set_setting("auto_hints", "off").unwrap();
+        assert_eq!(db.get_setting("auto_hints").unwrap().as_deref(), Some("off"));
+        assert_eq!(db.get_setting("other").unwrap().as_deref(), Some("x"));
     }
 }

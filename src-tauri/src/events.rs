@@ -84,6 +84,8 @@ pub struct TranscribeEvent {
 /// Streamed text while a hint is being generated (raw, may include a label that the final text drops).
 #[derive(Serialize, Clone)]
 pub struct HintPieceEvent {
+    /// Why an automatic hint was offered ("question" or "pause"); `None` for a hint the user asked for.
+    pub trigger: Option<&'static str>,
     pub meeting_id: i64,
     pub hint_id: u64,
     pub text: String,
@@ -91,6 +93,8 @@ pub struct HintPieceEvent {
 
 #[derive(Serialize, Clone)]
 pub struct HintDoneEvent {
+    /// Why an automatic hint was offered ("question" or "pause"); `None` for a hint the user asked for.
+    pub trigger: Option<&'static str>,
     pub meeting_id: i64,
     pub hint_id: u64,
     /// Cleaned hint, or `None` when the model had nothing useful to say.

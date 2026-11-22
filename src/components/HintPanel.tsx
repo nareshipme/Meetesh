@@ -32,6 +32,11 @@ export default function HintPanel({ state, onCancel, onDismiss }: Props) {
         </div>
       </div>
       <div className="hint-side">
+        {(state.kind === "done" || state.kind === "working") && state.trigger && (
+          <small className="chip chip-busy" title="Offered automatically. Change this with “Auto hints” above the transcript.">
+            {state.trigger === "question" ? "after a question" : "during a pause"}
+          </small>
+        )}
         {state.kind === "done" && (
           <small className="muted" title={state.fellBack ? "The GPU could not run the model, so this hint used the CPU" : undefined}>
             {(state.ms / 1000).toFixed(1)} s · {state.backend}

@@ -104,10 +104,49 @@ export function installMock(variant: string) {
       }, 100),
       window.setInterval(() => {
         const seg = { start_ms: Date.now() - t0, end_ms: Date.now() - t0 + 2000, text: SAMPLE_LINES[line++ % SAMPLE_LINES.length], source: (withSystem && line % 2 === 0 ? "system" : "mic") as "mic" | "system" };
+        // Every fourth line is a question from the other side.
+        if (withSystem && line % 4 === 0) {
+          seg.text = "Can you tell us when the release will be ready?";
+          seg.source = "system";
+        }
         transcripts.get(id)!.push(seg);
         if (modelInstalled) emit("live-segments", { meeting_id: id, segments: [seg] });
+        if (assistInstalled && withSystem && autoHints !== "off" && seg.source === "system" && seg.text.endsWith("?")) {
+          window.setTimeout(() => {
+            try {
+              runHintSim(id, "question");
+            } catch {
+              /* busy: skipped, like the app */
+            }
+          }, 1600);
+        }
       }, 2500),
     );
+  }
+
+  let autoHints = "off";
+  function runHintSim(meetingId: number, trigger: "question" | "pause" | null): number {
+    if (hintBusy) throw "A hint is already being generated";
+    hintBusy = true;
+    const words = "Can you clarify what support needs that extra week for?".split(" ");
+    let i = 0;
+    const t0 = Date.now();
+    const id = Date.now();
+    const timer = window.setInterval(() => {
+      if (!hintBusy) {
+        clearInterval(timer);
+        emit("hint-done", { trigger, meeting_id: meetingId, hint_id: id, text: null, cancelled: true, error: null, first_token_ms: 0, total_ms: 0, tokens: 0, on_gpu: false, cpu_fallback: false });
+        return;
+      }
+      i++;
+      emit("hint-piece", { trigger, meeting_id: meetingId, hint_id: id, text: words.slice(0, i).join(" ") });
+      if (i >= words.length) {
+        clearInterval(timer);
+        hintBusy = false;
+        emit("hint-done", { trigger, meeting_id: meetingId, hint_id: id, text: words.join(" "), cancelled: false, error: null, first_token_ms: 900, total_ms: Date.now() - t0, tokens: words.length, on_gpu: true, cpu_fallback: false });
+      }
+    }, 450);
+    return id;
   }
 
   let summaryTimer: number | undefined;
@@ -282,29 +321,13 @@ export function installMock(variant: string) {
         case "cancel_hint":
           hintBusy = false;
           return null;
-        case "request_hint": {
-          if (hintBusy) throw "A hint is already being generated";
-          hintBusy = true;
-          const words = "Can you clarify what support needs that extra week for?".split(" ");
-          let i = 0;
-          const t0 = Date.now();
-          const id = Date.now();
-          const timer = window.setInterval(() => {
-            if (!hintBusy) {
-              clearInterval(timer);
-              emit("hint-done", { meeting_id: a.meetingId, hint_id: id, text: null, cancelled: true, error: null, first_token_ms: 0, total_ms: 0, tokens: 0, on_gpu: false, cpu_fallback: false });
-              return;
-            }
-            i++;
-            emit("hint-piece", { meeting_id: a.meetingId, hint_id: id, text: words.slice(0, i).join(" ") });
-            if (i >= words.length) {
-              clearInterval(timer);
-              hintBusy = false;
-              emit("hint-done", { meeting_id: a.meetingId, hint_id: id, text: words.join(" "), cancelled: false, error: null, first_token_ms: 900, total_ms: Date.now() - t0, tokens: words.length, on_gpu: true, cpu_fallback: false });
-            }
-          }, 450);
-          return id;
-        }
+        case "request_hint":
+          return runHintSim(a.meetingId, null);
+        case "get_auto_hints":
+          return autoHints;
+        case "set_auto_hints":
+          autoHints = a.mode;
+          return null;
         case "download_model": {
           const id: string = a.id;
           const total = SIZES[id];
