@@ -55,6 +55,8 @@ pub struct AppState {
     pub auto_hints: Arc<crate::auto_hints::AutoHints>,
     pub db: Mutex<Db>,
     pub recordings_root: PathBuf,
+    /// Where "Export Markdown" writes its files.
+    pub exports_root: PathBuf,
     pub active: Mutex<Option<ActiveRecording>>,
     pub manifest: Manifest,
     pub models: ModelStore,
@@ -93,6 +95,7 @@ impl AppState {
             auto_hints: Arc::new(crate::auto_hints::AutoHints::new(auto_mode)),
             db: Mutex::new(db),
             recordings_root: data_dir.join("recordings"),
+            exports_root: data_dir.join("exports"),
             active: Mutex::new(None),
             manifest: Manifest::bundled(),
             models: ModelStore::new(data_dir.join("models")),

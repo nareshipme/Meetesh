@@ -8,6 +8,7 @@ pub mod assist;
 pub mod audio;
 pub mod db;
 pub mod error;
+pub mod export;
 pub mod models;
 
 pub use asr::{Source, TranscriptSegment, Transcriber};
