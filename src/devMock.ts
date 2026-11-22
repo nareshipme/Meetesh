@@ -103,6 +103,14 @@ export function installMock(variant: string) {
     SAMPLE_LINES.map((text, i) => ({ start_ms: 2000 + i * 7000, end_ms: 6000 + i * 7000, text, source: i % 3 === 1 ? "mic" : "system" })),
   );
 
+  const online = { enabled: false, auto: false, preset: "openrouter", base_url: "", auth_header: "", model: "", has_key: false };
+  const ONLINE_PRESETS = [
+    { id: "openrouter", name: "OpenRouter (free models)", base_url: "https://openrouter.ai/api/v1", model: "", free_only: true, note: "Create a key at openrouter.ai/keys. Free models are shared and often slow down or refuse for a while; Meetesh retries. Free models may keep or learn from what you send, depending on the model's provider." },
+    { id: "sarvam", name: "Sarvam", base_url: "https://api.sarvam.ai/v1", model: "sarvam-105b", free_only: false, note: "Key from dashboard.sarvam.ai. Good for Indian languages." },
+    { id: "custom", name: "Other (OpenAI-compatible)", base_url: "", model: "", free_only: false, note: "Any server that accepts the OpenAI chat completions format: OpenAI, Groq, Together, or Ollama on this computer (http://localhost:11434/v1)." },
+  ];
+  const onlineStatus = () => ({ ...online, keychain_error: null, presets: ONLINE_PRESETS });
+
   const find = (id: number) => meetings.find((m) => m.id === id)!;
 
   function startRecordingSim(id: number, withSystem: boolean) {
@@ -370,6 +378,33 @@ export function installMock(variant: string) {
           if (notesRunning === a.id) return { state: pausedFor() ? "paused" : "running", position: 0, paused_for: pausedFor() };
           if (notesLine.includes(a.id)) return { state: "queued", position: notesLine.indexOf(a.id) + (notesRunning !== null ? 1 : 0), paused_for: null };
           return { state: "idle", position: 0, paused_for: null };
+        case "online_status":
+          return onlineStatus();
+        case "save_online": {
+          if (a.settings.enabled) {
+            if (!a.consent) throw "Tick the box to confirm that your meeting text will be sent to this provider";
+            if (!online.has_key) throw "Add the API key first";
+            if (!a.settings.model.trim()) throw "Choose a model";
+          }
+          Object.assign(online, a.settings);
+          return onlineStatus();
+        }
+        case "set_online_key":
+          if (!String(a.key).trim()) throw "Enter an API key";
+          online.has_key = true;
+          return onlineStatus();
+        case "clear_online_key":
+          online.has_key = false;
+          online.enabled = false;
+          return onlineStatus();
+        case "test_online":
+          return new Promise((res, rej) =>
+            setTimeout(() => (variant === "onlinefail" ? rej("The provider rejected the API key. Check that it is correct and still valid.") : res(null)), 300),
+          );
+        case "list_online_models":
+          return new Promise((res, rej) =>
+            setTimeout(() => (online.has_key ? res(["google/gemma-3-27b-it:free", "meta-llama/llama-3.3-70b-instruct:free", "poolside/laguna-s-2.1:free"]) : rej("Add the API key first")), 300),
+          );
         case "clear_summary":
           find(a.id).summary = "";
           find(a.id).summary_model = "";

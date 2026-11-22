@@ -211,6 +211,20 @@ Note your OS, CPU, whether the model was tiny or base, and the relevant log line
 ## Known limits right now
 No system audio on Linux, English models only, one recording per meeting, no summaries yet, hints only on request.
 
+## 6a. Online meeting notes (optional)
+Needs a key from OpenRouter (openrouter.ai/keys, free models), Sarvam (dashboard.sarvam.ai) or another OpenAI-compatible provider. Use a meeting that is fine to send out.
+- [ ] Settings > Meeting notes written online: it says "Off: nothing leaves this device", and the switch is locked until the consent box is ticked. List models and Test are locked until a key is saved.
+- [ ] Paste a key and **Save key**: the field empties and says "(saved)". Restart the app: still saved (the key is in the keychain: macOS Keychain Access "app.meetesh", Windows Credential Manager). The key must not appear in the app's database or log folder (search them for the first characters).
+- [ ] OpenRouter: **List models** shows only free (`:free`) models. Pick one, **Test connection** says it connected. A wrong key gives "rejected the API key", a wrong model "does not know this model".
+- [ ] Tick consent, turn it on, **Save**. Open a meeting and click Write meeting notes: notes appear, labelled "Written online by <model> (the transcript text was sent to that provider)", and a title is set. A hint and live text still work while this runs.
+- [ ] Free models are often busy: if a request is retried the notes just take longer; if it finally fails the message says the provider is busy (no stack trace, no key, no transcript text).
+- [ ] With "automatic" off, finishing a recording does **not** start notes. With it on, it does.
+- [ ] Cancel while notes are being written online: it stops within about a second.
+- [ ] Sarvam: provider Sarvam, model `sarvam-105b`; notes for a short call. (Their chat address and header are from their docs; tell us if it fails.)
+- [ ] Ollama on this computer: provider Other, address `http://localhost:11434/v1`, a pulled model name, any key text.
+- [ ] A plain `http://` address for another computer is refused. **Remove key** turns online notes off.
+- [ ] Turn it off again: notes are written on this device as before.
+
 ## 6. Choosing models
 - [ ] Settings > Models: for each of the three jobs, pick a different model from the menu. A model that is not installed shows a **Download** button in the same box; one that is installed starts loading (see the sidebar footer) and is used for the next hint, note or transcription.
 - [ ] Speech: switch Whisper Base to Whisper Small (compact), download it, record a short test: live text appears and is at least as accurate. Note how much slower it is (the live text should still keep up; if it falls behind the log says chunks were dropped).

@@ -18,7 +18,7 @@ mod runtime;
 mod state;
 mod system_audio;
 
-use commands::{assist, meetings, models, recording, summary, transcription};
+use commands::{assist, meetings, models, online, recording, summary, transcription};
 use state::AppState;
 use tauri::Manager;
 
@@ -79,7 +79,13 @@ pub fn run() {
             summary::summarize_meeting,
             summary::cancel_summary,
             summary::summary_status,
-            summary::clear_summary
+            summary::clear_summary,
+            online::online_status,
+            online::save_online,
+            online::set_online_key,
+            online::clear_online_key,
+            online::test_online,
+            online::list_online_models
         ])
         .run(tauri::generate_context!())
         .expect("error while running Meetesh");

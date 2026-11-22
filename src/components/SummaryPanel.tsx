@@ -31,7 +31,14 @@ function Notes({ text }: { text: string }) {
   return <div className="notes-body">{blocks}</div>;
 }
 
-/** Meeting notes (summary, decisions, action items) written by the on-device model after a meeting. */
+/** Where the notes were written: on this device, or by an online model (the text was sent there). */
+function writtenBy(model: string): string {
+  if (!model) return "";
+  if (model.startsWith("online:")) return `Written online by ${model.slice(7)} (the transcript text was sent to that provider)`;
+  return `Written on this device by ${model}`;
+}
+
+/** Meeting notes (summary, decisions, action items), written after a meeting by the on-device model or, if chosen, an online one. */
 export default function SummaryPanel({ meeting, assistReady, notify, onChange, onOpenSettings }: Props) {
   // null: nothing is being written for this meeting. Otherwise where the notes are in the background job.
   const [progress, setProgress] = useState<(SummaryStatus & { done: number; total: number }) | null>(null);
@@ -141,7 +148,7 @@ export default function SummaryPanel({ meeting, assistReady, notify, onChange, o
   return (
     <section className="notes">
       <div className="notes-bar">
-        <small className="muted">{meeting.summary_model ? `Written on this device by ${meeting.summary_model}` : ""}</small>
+        <small className="muted">{writtenBy(meeting.summary_model)}</small>
         <div className="row">
           <button className="btn btn-sm" onClick={copy}>
             Copy

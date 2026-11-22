@@ -97,6 +97,31 @@ export interface DownloadEvent {
   error: string | null;
 }
 
+/** What the user chose for online meeting notes (the API key is never part of this). */
+export interface OnlineSettings {
+  enabled: boolean;
+  auto: boolean;
+  preset: string;
+  base_url: string;
+  auth_header: string;
+  model: string;
+}
+
+export interface OnlinePreset {
+  id: string;
+  name: string;
+  base_url: string;
+  model: string;
+  free_only: boolean;
+  note: string;
+}
+
+export interface OnlineStatus extends OnlineSettings {
+  has_key: boolean;
+  keychain_error: string | null;
+  presets: OnlinePreset[];
+}
+
 export type LoadState = "idle" | "loading" | "warming" | "ready" | "failed";
 
 /** Where an installed model is on its way into memory. */
@@ -256,6 +281,12 @@ export const api = {
   cancelSummary: (id: number) => invoke<void>("cancel_summary", { id }),
   summaryStatus: (id: number) => invoke<SummaryStatus>("summary_status", { id }),
   clearSummary: (id: number) => invoke<Meeting>("clear_summary", { id }),
+  onlineStatus: () => invoke<OnlineStatus>("online_status"),
+  saveOnline: (settings: OnlineSettings, consent: boolean) => invoke<OnlineStatus>("save_online", { settings, consent }),
+  setOnlineKey: (key: string) => invoke<OnlineStatus>("set_online_key", { key }),
+  clearOnlineKey: () => invoke<OnlineStatus>("clear_online_key"),
+  testOnline: (settings: OnlineSettings) => invoke<void>("test_online", { settings }),
+  listOnlineModels: (settings: OnlineSettings) => invoke<string[]>("list_online_models", { settings }),
   onSummary: (cb: (e: SummaryEvent) => void) => listen<SummaryEvent>("summary-progress", (e) => cb(e.payload)),
   onLevel: (cb: (level: number) => void) => listen<number>("recording-level", (e) => cb(e.payload)),
 };
