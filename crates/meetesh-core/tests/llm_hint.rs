@@ -24,7 +24,7 @@ fn rss_mb() -> u64 {
 }
 
 fn seg(start_ms: i64, text: &str) -> TranscriptSegment {
-    TranscriptSegment { start_ms, end_ms: start_ms + 3000, text: text.into() }
+    TranscriptSegment::new(start_ms, start_ms + 3000, text)
 }
 
 fn model_path() -> Option<PathBuf> {

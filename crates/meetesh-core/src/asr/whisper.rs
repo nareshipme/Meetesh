@@ -77,7 +77,7 @@ impl Transcriber for WhisperTranscriber {
             }
             let text = seg.to_str_lossy().map_err(|e| werr("bad text", e))?.trim().to_string();
             // whisper timestamps are in centiseconds
-            out.push(TranscriptSegment { start_ms: seg.start_timestamp() * 10, end_ms: seg.end_timestamp() * 10, text });
+            out.push(TranscriptSegment::new(seg.start_timestamp() * 10, seg.end_timestamp() * 10, text));
         }
         Ok(out)
     }

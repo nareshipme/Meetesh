@@ -20,10 +20,17 @@ use meetesh_core::audio::RecordingSession;
 /// Device class for picking default models from the manifest (NFR-24).
 pub const PROFILE: Profile = Profile::Desktop;
 
+/// The other participants' audio, recorded next to the microphone.
+pub struct SystemTrack {
+    pub session: RecordingSession,
+    pub capture: CaptureHandle,
+}
+
 pub struct ActiveRecording {
     pub meeting_id: i64,
     pub session: RecordingSession,
     pub capture: CaptureHandle,
+    pub system: Option<SystemTrack>,
     /// Present when live transcription was running for this recording.
     pub live: Option<Arc<Mutex<LiveSettle>>>,
 }

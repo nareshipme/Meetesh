@@ -4,19 +4,20 @@
 use std::sync::{Arc, Mutex};
 
 use meetesh_core::asr::live::{live_chunker_config, LiveReport, LiveSettle, LiveTranscriber};
-use meetesh_core::Transcriber;
+use meetesh_core::{Source, Transcriber};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::commands::transcription::start_transcription;
 use crate::events::{LiveDoneEvent, LiveSegmentsEvent, LIVE_DONE, LIVE_SEGMENTS};
 use crate::state::{get_transcriber, AppState};
 
-/// Build the live transcription sink for one recording. Segments are saved as they arrive and
-/// pushed to the UI. Never logs transcript text.
-pub fn live_sink(app: &AppHandle, meeting_id: i64, model_id: String, outcome: Arc<Mutex<LiveSettle>>) -> LiveTranscriber {
+/// Build the live transcription sink for one track of a recording. Segments are saved as they
+/// arrive and pushed to the UI. Never logs transcript text.
+pub fn live_sink(app: &AppHandle, meeting_id: i64, model_id: String, source: Source, outcome: Arc<Mutex<LiveSettle>>) -> LiveTranscriber {
     let (load_app, seg_app, done_app) = (app.clone(), app.clone(), app.clone());
     let pending = app.state::<AppState>().asr_pending.clone();
-    LiveTranscriber::start_with_load(
+    LiveTranscriber::start_track(
+        source,
         live_chunker_config(),
         8,
         Box::new(move || Ok(get_transcriber(&load_app)? as Arc<dyn Transcriber>)),
@@ -34,7 +35,8 @@ pub fn live_sink(app: &AppHandle, meeting_id: i64, model_id: String, outcome: Ar
         },
         move |report| {
             log::info!(
-                "live transcription for meeting {meeting_id}: {} chunks, {} dropped, {} errors",
+                "live transcription ({}) for meeting {meeting_id}: {} chunks, {} dropped, {} errors",
+                source.as_str(),
                 report.chunks,
                 report.dropped_chunks,
                 report.errors.len()

@@ -10,8 +10,8 @@ use std::sync::mpsc::{sync_channel, SyncSender, TrySendError};
 use std::sync::Arc;
 
 use crate::asr::chunker::{Chunk, Chunker, ChunkerConfig};
-use crate::asr::run::transcribe_chunk;
-use crate::asr::{TranscriptSegment, Transcriber};
+use crate::asr::run::transcribe_chunk_on;
+use crate::asr::{Source, TranscriptSegment, Transcriber};
 use crate::audio::pipeline::FrameSink;
 use crate::Result;
 
@@ -33,13 +33,27 @@ impl LiveReport {
 
 /// Live transcription finishes on its own thread, either before or after the recording is
 /// stopped. This hands the final report to exactly one caller: whichever event happens second.
-#[derive(Default)]
 pub struct LiveSettle {
     recording_stopped: bool,
+    /// Workers that have not reported yet (one per live track).
+    waiting_for: usize,
     report: Option<LiveReport>,
 }
 
+impl Default for LiveSettle {
+    /// One live worker (the microphone).
+    fn default() -> Self {
+        LiveSettle { recording_stopped: false, waiting_for: 1, report: None }
+    }
+}
+
 impl LiveSettle {
+    /// Another live worker (system audio) joined this recording. Call before it can finish. The
+    /// final report merges all workers.
+    pub fn expect_another_worker(&mut self) {
+        self.waiting_for += 1;
+    }
+
     /// The recording has stopped and its metadata is saved. Returns the report if the worker
     /// has already finished.
     pub fn recording_stopped(&mut self) -> Option<LiveReport> {
@@ -49,12 +63,20 @@ impl LiveSettle {
 
     /// The live worker has finished. Returns the report if the recording has already stopped.
     pub fn worker_finished(&mut self, report: LiveReport) -> Option<LiveReport> {
-        self.report = Some(report);
+        self.waiting_for = self.waiting_for.saturating_sub(1);
+        match self.report.as_mut() {
+            Some(total) => {
+                total.chunks += report.chunks;
+                total.dropped_chunks += report.dropped_chunks;
+                total.errors.extend(report.errors);
+            }
+            None => self.report = Some(report),
+        }
         self.take()
     }
 
     fn take(&mut self) -> Option<LiveReport> {
-        if self.recording_stopped {
+        if self.recording_stopped && self.waiting_for == 0 {
             self.report.take()
         } else {
             None
@@ -102,6 +124,19 @@ impl LiveTranscriber {
         on_done: impl FnOnce(LiveReport) + Send + 'static,
         pending: Arc<AtomicUsize>,
     ) -> Self {
+        Self::start_track(Source::Mic, cfg, queue_len, loader, on_segments, on_done, pending)
+    }
+
+    /// Like `start_with_load`, for one track of a meeting: segments are tagged with its source.
+    pub fn start_track(
+        source: Source,
+        cfg: ChunkerConfig,
+        queue_len: usize,
+        loader: Loader,
+        on_segments: impl Fn(Vec<TranscriptSegment>) + Send + 'static,
+        on_done: impl FnOnce(LiveReport) + Send + 'static,
+        pending: Arc<AtomicUsize>,
+    ) -> Self {
         let pending_worker = pending.clone();
         let (tx, rx) = sync_channel::<Chunk>(queue_len.max(1));
         let dropped = Arc::new(AtomicU64::new(0));
@@ -113,7 +148,7 @@ impl LiveTranscriber {
                 match loader() {
                     Ok(t) => {
                         for chunk in rx {
-                            match transcribe_chunk(t.as_ref(), &chunk) {
+                            match transcribe_chunk_on(t.as_ref(), &chunk, source) {
                                 Ok(segs) if !segs.is_empty() => on_segments(segs),
                                 Ok(_) => {}
                                 Err(e) => report.errors.push(e.to_string()),
@@ -188,7 +223,7 @@ mod tests {
         }
         fn transcribe(&self, samples: &[f32]) -> Result<Vec<TranscriptSegment>> {
             std::thread::sleep(self.delay);
-            Ok(vec![TranscriptSegment { start_ms: 0, end_ms: (samples.len() / 16) as i64, text: "words".into() }])
+            Ok(vec![TranscriptSegment::new(0, (samples.len() / 16) as i64, "words")])
         }
     }
 
@@ -352,6 +387,49 @@ mod tests {
         assert!(b.recording_stopped().is_none());
         assert!(b.worker_finished(r()).is_some());
         assert!(b.recording_stopped().is_none(), "must not fire twice");
+    }
+
+    #[test]
+    fn settle_waits_for_every_track_and_merges_their_reports() {
+        let r = |chunks, dropped| LiveReport { chunks, dropped_chunks: dropped, ..Default::default() };
+        let mut s = LiveSettle::default();
+        s.expect_another_worker();
+        assert!(s.worker_finished(r(3, 0)).is_none());
+        assert!(s.recording_stopped().is_none(), "the second track is still working");
+        let merged = s.worker_finished(r(2, 1)).expect("fires when the last worker finishes");
+        assert_eq!((merged.chunks, merged.dropped_chunks), (5, 1));
+        assert!(merged.needs_full_pass(), "a gap in either track needs a full pass");
+    }
+
+    #[test]
+    fn system_track_is_tagged_with_its_source() {
+        let got: Collected = Arc::new(Mutex::new(vec![]));
+        let g = got.clone();
+        let (done_tx, done_rx) = channel();
+        let l = LiveTranscriber::start_track(
+            Source::System,
+            live_chunker_config(),
+            8,
+            Box::new(|| Ok(Arc::new(Fake { delay: Duration::ZERO }) as Arc<dyn Transcriber>)),
+            move |s| g.lock().unwrap().extend(s),
+            move |r| {
+                let _ = done_tx.send(r);
+            },
+            Arc::new(AtomicUsize::new(0)),
+        );
+        let session = RecordingSession::start(vec![Box::new(l)], 4096);
+        let mut p = session.pusher(16_000, 1);
+        let mut audio = quiet(300);
+        audio.extend(talk(1_000));
+        audio.extend(quiet(700));
+        for c in audio.chunks(160) {
+            p.push_interleaved(c);
+        }
+        session.stop();
+        done_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+        let segs = got.lock().unwrap().clone();
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0].source, crate::Source::System);
     }
 
     #[test]

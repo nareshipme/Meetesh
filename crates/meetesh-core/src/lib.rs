@@ -10,6 +10,6 @@ pub mod db;
 pub mod error;
 pub mod models;
 
-pub use asr::{TranscriptSegment, Transcriber};
+pub use asr::{Source, TranscriptSegment, Transcriber};
 pub use db::{Db, Meeting};
 pub use error::{Error, Result};

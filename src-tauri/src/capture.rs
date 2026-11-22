@@ -1,11 +1,10 @@
-//! Microphone capture with cpal. Platform-specific, so it lives in the shell, not the core.
+//! Microphone capture with cpal (also the base for Windows system-audio loopback). Platform-specific, so it lives in the shell, not the core.
 //! The cpal stream is built and owned by one dedicated thread (streams are not Send everywhere).
 
-use std::sync::mpsc::{channel, Sender};
-use std::thread::JoinHandle;
+use std::sync::mpsc::channel;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{Device, SampleFormat};
+use cpal::{Device, SampleFormat, SupportedStreamConfig};
 use meetesh_core::audio::Pusher;
 use serde::Serialize;
 
@@ -37,38 +36,58 @@ fn pick_device(name: Option<&str>) -> Result<Device, String> {
     }
 }
 
+/// A running capture. Dropping it without calling `stop` leaves the capture running.
 pub struct CaptureHandle {
-    stop: Sender<()>,
-    join: JoinHandle<()>,
+    stop: Box<dyn FnOnce() + Send>,
 }
 
 impl CaptureHandle {
-    /// Stops the stream and waits for the capture thread to exit.
+    pub fn new(stop: impl FnOnce() + Send + 'static) -> Self {
+        CaptureHandle { stop: Box::new(stop) }
+    }
+
+    /// Stops the stream and waits for the capture to wind down.
     pub fn stop(self) {
-        let _ = self.stop.send(());
-        let _ = self.join.join();
+        (self.stop)()
     }
 }
 
-/// Start capturing from `device_name` (or the default input). `make_pusher` is called with the
-/// device's native sample rate and channel count. Returns once the stream is running, or the
-/// reason it could not start (no device, permission denied, ...).
+/// Start capturing from the microphone `device_name` (or the default input). `make_pusher` is
+/// called with the device's native sample rate and channel count. Returns once the stream is
+/// running, or the reason it could not start (no device, permission denied, ...).
 pub fn start_capture<F>(device_name: Option<String>, make_pusher: F) -> Result<CaptureHandle, String>
 where
+    F: FnOnce(u32, u16) -> Pusher + Send + 'static,
+{
+    start_cpal(
+        "microphone",
+        move || {
+            let device = pick_device(device_name.as_deref())?;
+            let config = device.default_input_config().map_err(|e| format!("Microphone unavailable: {e}"))?;
+            Ok((device, config))
+        },
+        make_pusher,
+    )
+}
+
+/// Capture through cpal from whatever device `select` returns. The stream is built and owned by
+/// one dedicated thread (streams are not Send everywhere). `what` names the source in errors.
+pub fn start_cpal<S, F>(what: &'static str, select: S, make_pusher: F) -> Result<CaptureHandle, String>
+where
+    S: FnOnce() -> Result<(Device, SupportedStreamConfig), String> + Send + 'static,
     F: FnOnce(u32, u16) -> Pusher + Send + 'static,
 {
     let (stop_tx, stop_rx) = channel::<()>();
     let (ready_tx, ready_rx) = channel::<Result<(), String>>();
 
     let join = std::thread::Builder::new()
-        .name("meetesh-capture".into())
+        .name(format!("meetesh-capture-{what}"))
         .spawn(move || {
             let built = (|| -> Result<cpal::Stream, String> {
-                let device = pick_device(device_name.as_deref())?;
-                let config = device.default_input_config().map_err(|e| format!("Microphone unavailable: {e}"))?;
+                let (device, config) = select()?;
                 let (rate, channels, format) = (config.sample_rate().0, config.channels(), config.sample_format());
                 let mut pusher = make_pusher(rate, channels);
-                let err_fn = |e| log::error!("audio stream error: {e}");
+                let err_fn = move |e| log::error!("{what} stream error: {e}");
                 let cfg = config.into();
                 let stream = match format {
                     SampleFormat::F32 => device.build_input_stream(
@@ -97,8 +116,8 @@ where
                     ),
                     other => return Err(format!("Unsupported sample format {other:?}")),
                 }
-                .map_err(|e| format!("Could not open microphone: {e}"))?;
-                stream.play().map_err(|e| format!("Could not start microphone: {e}"))?;
+                .map_err(|e| format!("Could not open the {what}: {e}"))?;
+                stream.play().map_err(|e| format!("Could not start the {what}: {e}"))?;
                 Ok(stream)
             })();
 
@@ -116,7 +135,10 @@ where
         .map_err(|e| e.to_string())?;
 
     match ready_rx.recv() {
-        Ok(Ok(())) => Ok(CaptureHandle { stop: stop_tx, join }),
+        Ok(Ok(())) => Ok(CaptureHandle::new(move || {
+            let _ = stop_tx.send(());
+            let _ = join.join();
+        })),
         Ok(Err(e)) => {
             let _ = join.join();
             Err(e)

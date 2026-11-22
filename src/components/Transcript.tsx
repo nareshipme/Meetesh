@@ -92,7 +92,7 @@ export default function Transcript({ meeting, modelReady, assistReady, assistLoa
   }
 
   async function copy() {
-    const text = segments.map((s) => `${fmtDuration(s.start_ms)}  ${s.text}`).join("\n");
+    const text = segments.map((s) => `${fmtDuration(s.start_ms)}  ${labelled ? `${who(s)}: ` : ""}${s.text}`).join("\n");
     try {
       await navigator.clipboard.writeText(text);
       notify("info", "Transcript copied");
@@ -101,6 +101,9 @@ export default function Transcript({ meeting, modelReady, assistReady, assistLoa
     }
   }
 
+  // "You" / "Others" only matter when both sides of a call were recorded.
+  const labelled = meeting.has_system_audio || segments.some((s) => s.source === "system");
+  const who = (s: TranscriptSegment) => (s.source === "system" ? "Others" : "You");
   const hasAudio = meeting.duration_ms > 0 && !recording;
   const transcribing = progress !== null;
 
@@ -159,7 +162,10 @@ export default function Transcript({ meeting, modelReady, assistReady, assistLoa
             {segments.map((s, i) => (
               <li key={`${s.start_ms}-${i}`}>
                 <time>{fmtDuration(s.start_ms)}</time>
-                <span>{s.text}</span>
+                <span>
+                  {labelled && <b className={`who ${s.source === "system" ? "who-others" : "who-you"}`}>{who(s)}</b>}
+                  {s.text}
+                </span>
               </li>
             ))}
           </ol>

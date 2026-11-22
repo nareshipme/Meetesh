@@ -9,8 +9,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender, TrySendError};
 use std::sync::Arc;
 use std::thread::JoinHandle;
+use std::time::Instant;
 
-use crate::audio::Resampler;
+use crate::audio::{Resampler, TARGET_RATE};
 
 /// Consumer of 16 kHz mono frames. Runs on the pipeline thread.
 pub trait FrameSink: Send {
@@ -41,12 +42,37 @@ pub struct RecordingSession {
     join: JoinHandle<SessionReport>,
 }
 
+/// Some capture APIs (Windows loopback) deliver nothing while nothing is playing. A track made
+/// only from what arrives would be shorter than real time, and everything after a quiet stretch
+/// would be stamped too early. `GapFiller` says how much silence to insert so the track keeps
+/// real time. Pure and testable: the caller supplies the elapsed time.
+#[derive(Debug, Clone, Default)]
+pub struct GapFiller {
+    produced: u64,
+}
+
+impl GapFiller {
+    /// Gaps shorter than this are ordinary delivery jitter and are left alone.
+    const TOLERANCE_SAMPLES: u64 = TARGET_RATE as u64 / 10;
+
+    /// `elapsed_ms`: time since the track started, now. `incoming`: 16 kHz samples that just
+    /// arrived (they ended about now). Returns how many silent samples to put before them.
+    pub fn gap_before(&mut self, elapsed_ms: u64, incoming: usize) -> usize {
+        let expected_start = (elapsed_ms * TARGET_RATE as u64 / 1000).saturating_sub(incoming as u64);
+        let gap = expected_start.saturating_sub(self.produced);
+        let gap = if gap > Self::TOLERANCE_SAMPLES { gap } else { 0 };
+        self.produced += gap + incoming as u64;
+        gap as usize
+    }
+}
+
 /// Handed to the capture backend. Owns the resampler for the device's native format.
 pub struct Pusher {
     tx: SyncSender<Msg>,
     dropped: Arc<AtomicU64>,
     resampler: Resampler,
     scratch: Vec<f32>,
+    gaps: Option<(Instant, GapFiller)>,
 }
 
 /// Cloneable, 'static source of `Pusher`s, so a capture thread can create its own once it
@@ -64,11 +90,28 @@ impl PusherFactory {
             dropped: self.dropped.clone(),
             resampler: Resampler::new(sample_rate, channels),
             scratch: Vec::new(),
+            gaps: None,
         }
     }
 }
 
 impl Pusher {
+    /// Keep this track in real time: when the source delivers nothing for a while, insert
+    /// silence. `origin` is when the track's clock started (the moment capture began).
+    pub fn fill_gaps_from(mut self, origin: Instant) -> Self {
+        self.gaps = Some((origin, GapFiller::default()));
+        self
+    }
+
+    fn send(&self, frame: Vec<f32>) {
+        match self.tx.try_send(Msg::Frame(frame)) {
+            Ok(()) => {}
+            Err(TrySendError::Full(_)) | Err(TrySendError::Disconnected(_)) => {
+                self.dropped.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    }
+
     /// Call from the audio callback. Never blocks.
     pub fn push_interleaved(&mut self, input: &[f32]) {
         self.scratch.clear();
@@ -76,13 +119,16 @@ impl Pusher {
         if self.scratch.is_empty() {
             return;
         }
-        let frame = std::mem::take(&mut self.scratch);
-        match self.tx.try_send(Msg::Frame(frame)) {
-            Ok(()) => {}
-            Err(TrySendError::Full(_)) | Err(TrySendError::Disconnected(_)) => {
-                self.dropped.fetch_add(1, Ordering::Relaxed);
+        if let Some((origin, filler)) = self.gaps.as_mut() {
+            let mut gap = filler.gap_before(origin.elapsed().as_millis() as u64, self.scratch.len());
+            while gap > 0 {
+                let n = gap.min(TARGET_RATE as usize); // at most one second per frame
+                self.send(vec![0.0; n]);
+                gap -= n;
             }
         }
+        let frame = std::mem::take(&mut self.scratch);
+        self.send(frame);
     }
 }
 
@@ -209,5 +255,41 @@ mod tests {
         assert!(t.elapsed() < std::time::Duration::from_millis(500), "push blocked: {:?}", t.elapsed());
         let report = session.stop();
         assert!(report.dropped_frames > 0, "expected drops to be counted");
+    }
+
+    #[test]
+    fn gap_filler_leaves_steady_audio_alone_and_fills_silence_gaps() {
+        let mut g = GapFiller::default();
+        // 10 ms blocks arriving on time: never a gap.
+        for i in 1..=50u64 {
+            assert_eq!(g.gap_before(i * 10, 160), 0, "block {i}");
+        }
+        // Nothing arrives for 2 s, then a 10 ms block: 2 s of silence belong before it.
+        let gap = g.gap_before(500 + 2_000 + 10, 160);
+        assert!((31_000..=32_100).contains(&gap), "gap {gap}");
+        // And we are back in step afterwards.
+        assert_eq!(g.gap_before(2_520 + 10, 160), 0);
+    }
+
+    #[test]
+    fn gap_filler_ignores_jitter_and_a_late_start_is_silence_too() {
+        let mut g = GapFiller::default();
+        assert_eq!(g.gap_before(60, 160), 0, "50 ms late is jitter");
+        let mut g = GapFiller::default();
+        // The first audio arrives after 3 s of nothing: the track starts with that silence.
+        assert!(g.gap_before(3_000, 1_600) > 40_000);
+    }
+
+    #[test]
+    fn a_pusher_with_gap_filling_keeps_real_time() {
+        let got = Arc::new(Mutex::new(vec![]));
+        let session = RecordingSession::start(vec![Box::new(Collect(got.clone()))], 256);
+        let mut p = session.pusher(16_000, 1).fill_gaps_from(Instant::now() - std::time::Duration::from_millis(1_500));
+        // Audio first arrives 1.5 s after the track's clock started.
+        p.push_interleaved(&[0.5; 1_600]);
+        let report = session.stop();
+        let n = report.samples as i64;
+        assert!((n - 24_000).abs() < 2_000, "about 1.5 s in total, got {n}");
+        assert!(got.lock().unwrap()[..16_000].iter().all(|s| *s == 0.0), "the quiet start is silence");
     }
 }
