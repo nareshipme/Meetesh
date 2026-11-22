@@ -64,6 +64,8 @@ These show the interface running against the built-in sample-data backend (see [
 | Meetings list, rename, delete (audio is deleted with the meeting), WAV export | Working |
 | Responsive, dark-mode-aware UI | Working |
 
+What a person has actually tried on real hardware, and what only has automated checks, is tracked in [docs/VERIFICATION.md](docs/VERIFICATION.md).
+
 ## Roadmap
 
 | | Planned |
