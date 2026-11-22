@@ -47,6 +47,8 @@ const MIGRATIONS: &[&str] = &[
     // 6: a second audio track (the other participants, from system audio) and which track a segment came from
     "ALTER TABLE meetings ADD COLUMN has_system_audio INTEGER NOT NULL DEFAULT 0;
      ALTER TABLE transcript_segments ADD COLUMN source TEXT NOT NULL DEFAULT 'mic';",
+    // 7: which model wrote the summary (the summary text itself has been a column since migration 1)
+    "ALTER TABLE meetings ADD COLUMN summary_model TEXT NOT NULL DEFAULT '';",
 ];
 
 /// `recording`: audio is being captured. `stopped`: finished normally.
@@ -57,7 +59,7 @@ pub mod status {
     pub const RECOVERED: &str = "recovered";
 }
 
-const COLS: &str = "id, title, created_at, summary, status, duration_ms, audio_dir, transcript_model, agenda, has_system_audio";
+const COLS: &str = "id, title, created_at, summary, status, duration_ms, audio_dir, transcript_model, agenda, has_system_audio, summary_model";
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct Meeting {
@@ -75,6 +77,8 @@ pub struct Meeting {
     /// True when the other participants' audio (system audio) was recorded as a second track,
     /// in `audio_dir/system`.
     pub has_system_audio: bool,
+    /// Manifest id of the model that wrote `summary` ("" if none yet).
+    pub summary_model: String,
 }
 
 pub struct Db {
@@ -218,6 +222,18 @@ impl Db {
         self.get_meeting(id)
     }
 
+    /// Save the meeting notes (Markdown) and which model wrote them. An empty `summary` clears them.
+    pub fn set_summary(&self, id: i64, summary: &str, model_id: &str) -> Result<Meeting> {
+        let n = self.conn.execute(
+            "UPDATE meetings SET summary = ?1, summary_model = ?2 WHERE id = ?3",
+            params![summary, if summary.is_empty() { "" } else { model_id }, id],
+        )?;
+        if n == 0 {
+            return Err(Error::NotFound(id));
+        }
+        self.get_meeting(id)
+    }
+
     pub fn set_agenda(&self, id: i64, agenda: &str) -> Result<Meeting> {
         let n = self.conn.execute("UPDATE meetings SET agenda = ?1 WHERE id = ?2", params![agenda, id])?;
         if n == 0 {
@@ -308,6 +324,7 @@ fn row_to_meeting(r: &rusqlite::Row<'_>) -> rusqlite::Result<Meeting> {
         transcript_model: r.get(7)?,
         agenda: r.get(8)?,
         has_system_audio: r.get::<_, i64>(9)? != 0,
+        summary_model: r.get(10)?,
     })
 }
 
@@ -523,5 +540,17 @@ mod tests {
         assert!(!db.get_meeting(1).unwrap().has_system_audio);
         drop(db);
         std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn summary_roundtrip_and_clear() {
+        let db = Db::open_in_memory().unwrap();
+        let m = db.create_meeting(Some("S")).unwrap();
+        assert_eq!((m.summary.as_str(), m.summary_model.as_str()), ("", ""));
+        let m = db.set_summary(m.id, "## Summary\nOk.", "gemma").unwrap();
+        assert_eq!((m.summary.as_str(), m.summary_model.as_str()), ("## Summary\nOk.", "gemma"));
+        let m = db.set_summary(m.id, "", "gemma").unwrap();
+        assert_eq!((m.summary.as_str(), m.summary_model.as_str()), ("", ""), "clearing forgets the model too");
+        assert!(matches!(db.set_summary(999, "x", "m"), Err(Error::NotFound(999))));
     }
 }

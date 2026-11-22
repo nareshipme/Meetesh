@@ -6,6 +6,7 @@
 //!   implementation; a fake one drives the tests. Models are chosen by id from the manifest.
 
 pub mod prompt;
+pub mod summary;
 #[cfg(feature = "llm")]
 pub mod jinja;
 #[cfg(feature = "llm")]
@@ -67,6 +68,11 @@ pub struct GenOptions {
 impl GenOptions {
     pub fn hint(cancel: Arc<AtomicBool>) -> Self {
         GenOptions { max_tokens: 96, temperature: 0.3, cancel, yield_to: None, max_yield_ms: 1_500 }
+    }
+
+    /// Meeting notes: longer and steadier than a hint.
+    pub fn notes(cancel: Arc<AtomicBool>, max_tokens: usize) -> Self {
+        GenOptions { max_tokens, temperature: 0.2, ..GenOptions::hint(cancel) }
     }
 
     /// Let transcription go first: pause whenever `pending` is above zero.

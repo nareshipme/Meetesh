@@ -38,11 +38,11 @@ impl Default for Budget {
 }
 
 /// Used when the other participants were recorded too: lines say who spoke.
-const SPEAKER_NOTE: &str = "Lines starting with \"You:\" are the user; lines starting with \"Others:\" are the other \
+pub(crate) const SPEAKER_NOTE: &str = "Lines starting with \"You:\" are the user; lines starting with \"Others:\" are the other \
 participants on the call (not told apart) and the transcript may contain recognition mistakes.";
 
 /// True if the transcript has both sides of a call, so lines should be labelled.
-fn has_others(segments: &[TranscriptSegment]) -> bool {
+pub(crate) fn has_others(segments: &[TranscriptSegment]) -> bool {
     segments.iter().any(|s| s.source == Source::System)
 }
 
@@ -57,6 +57,25 @@ pub fn recent_window(segments: &[TranscriptSegment], window_ms: i64) -> Vec<Tran
     segments.iter().filter(|s| s.end_ms >= newest - window_ms).cloned().collect()
 }
 
+/// Every non-empty segment as a `[m:ss] text` line (labelled like `transcript_tail`), oldest first.
+pub fn transcript_lines(segments: &[TranscriptSegment]) -> Vec<String> {
+    let labelled = has_others(segments);
+    segments
+        .iter()
+        .filter(|s| !s.text.trim().is_empty())
+        .map(|s| line_for(s, labelled))
+        .collect()
+}
+
+fn line_for(seg: &TranscriptSegment, labelled: bool) -> String {
+    let who = match (labelled, seg.source) {
+        (false, _) => "",
+        (true, Source::Mic) => "You: ",
+        (true, Source::System) => "Others: ",
+    };
+    format!("[{}] {}{}", stamp(seg.start_ms), who, seg.text.trim())
+}
+
 /// The newest segments that fit in `max_chars`, formatted as `[m:ss] text` lines, oldest first
 /// (`[m:ss] You: text` / `[m:ss] Others: text` when the other participants were recorded too).
 /// Whole segments only, so a sentence is never cut in half.
@@ -65,16 +84,10 @@ pub fn transcript_tail(segments: &[TranscriptSegment], max_chars: usize) -> Stri
     let mut lines: Vec<String> = Vec::new();
     let mut used = 0usize;
     for seg in segments.iter().rev() {
-        let text = seg.text.trim();
-        if text.is_empty() {
+        if seg.text.trim().is_empty() {
             continue;
         }
-        let who = match (labelled, seg.source) {
-            (false, _) => "",
-            (true, Source::Mic) => "You: ",
-            (true, Source::System) => "Others: ",
-        };
-        let line = format!("[{}] {}{}", stamp(seg.start_ms), who, text);
+        let line = line_for(seg, labelled);
         if used + line.len() + 1 > max_chars && !lines.is_empty() {
             break;
         }
@@ -85,7 +98,7 @@ pub fn transcript_tail(segments: &[TranscriptSegment], max_chars: usize) -> Stri
     lines.join("\n")
 }
 
-fn truncate_chars(s: &str, max: usize) -> &str {
+pub(crate) fn truncate_chars(s: &str, max: usize) -> &str {
     if s.len() <= max {
         return s;
     }
@@ -116,7 +129,7 @@ pub fn build_hint_messages(ctx: &HintContext, budget: Budget) -> Vec<ChatMessage
 }
 
 /// Remove reasoning blocks some models emit (`<|channel>thought ... <channel|>`), keeping only the answer.
-fn strip_thinking(raw: &str) -> String {
+pub(crate) fn strip_thinking(raw: &str) -> String {
     let mut out = String::new();
     let mut rest = raw;
     while let Some(start) = rest.find("<|channel>") {

@@ -56,6 +56,7 @@ These show the interface running against the built-in sample-data backend (see [
 | Optional meeting goals that keep hints on topic | Working |
 | One-click recording: **New recording** (Ctrl/Cmd+N) opens the consent notice straight away, so starting is one click plus Enter. The consent reminder is still shown before every recording. The microphone is chosen in the same step and remembered | Working |
 | **System audio: the other participants.** Tick "Also record the other participants" in the consent step and what the computer plays (a call in Zoom, Meet, Teams, a browser) is recorded as a second track, transcribed live next to your microphone, and shown as **You** / **Others**. Hints see who said what. Windows: WASAPI loopback of the default speakers. macOS 13+: ScreenCaptureKit (asks for the Screen & System Audio Recording permission). Linux: not yet. If the second track cannot start, the microphone recording carries on and you are told | Implemented and compiled for Windows and macOS in this environment, tested with synthetic audio; **not yet run on real Windows or macOS hardware** (see [TESTING.md](TESTING.md#system-audio-the-other-participants)) |
+| **Meeting notes**: after a recording stops (or on demand with **✦ Write meeting notes** / **Regenerate**) the on-device model writes a short summary, decisions and action items, saved with the meeting, copyable, with a progress bar and Cancel. Long meetings are summarized in steps (transcript parts become notes, notes become the summary) so they fit the model's 4k context. Starting a new recording cancels a running summary so it never competes with live transcription | Working. Real Gemma 4 E2B on a 4-core CPU, scripted call: 11 lines took 29 s; 176 lines (about 26 minutes of speech, 4 steps) took 222 s, and the notes were faithful. Quality checked on scripted dialogue only, not yet on a real meeting |
 | Meetings list, rename, delete (audio is deleted with the meeting), WAV export | Working |
 | Responsive, dark-mode-aware UI | Working |
 
@@ -64,7 +65,7 @@ These show the interface running against the built-in sample-data backend (see [
 | | Planned |
 |---|---|
 | Next | **Automatic hint triggers** (a question is asked, a long pause), a global hotkey, and a hint overlay that floats over other apps |
-| Then | AI summaries (local via Ollama, or Claude with your own key), search, Markdown export |
+| Then | Search, Markdown export (a Claude-with-your-own-key option for summaries is an idea, not a plan) |
 | Then | System audio on Linux (PipeWire/PulseAudio monitor), and capturing one app or window instead of everything |
 | Then | Settings and onboarding, signed installers and auto-update |
 | Later | Mobile companion app, speaker labels, audio-file import |
@@ -85,6 +86,7 @@ Tracked as GitHub issues:
 - Hints are requested manually for now.
 - The live-assist model is a 3.1 GB download and, once downloaded, is loaded into memory at every start (about 4 GB). A per-user switch to load it only on demand is planned.
 - Models may run on the CPU even when a GPU is present ([#3](https://github.com/nareshipme/Meetesh/issues/3)). Speech recognition (Whisper) always runs on the CPU. On a CPU-only 4-core Linux machine a hint takes about 6 s.
+- Meeting notes need the live-assist model (the same 3.1 GB download). On a CPU-only 4-core machine each step of about 2,000 tokens of transcript took 20 to 85 s in our runs, so a one-hour meeting can take around ten minutes (it runs in the background and can be cancelled; a GPU is much faster). Notes can mishear or omit things, like the transcript they come from.
 - A hint can take longer to appear while people are talking, because it yields the processor to live transcription (a few seconds longer on a CPU-only machine; the transcript is never held up).
 - Some words can still be missing or wrong in the live transcript ([#4](https://github.com/nareshipme/Meetesh/issues/4)). Faint voices used to be dropped entirely; that is fixed on synthetic test speech but not yet confirmed on real recordings. The default speech model (Whisper base) also simply mishears words, more so with accents and noise; a larger model is not offered yet.
 - The other side of a call is captured as one "Others" track: everything the computer plays, so music or notification sounds are included, and several remote speakers are not told apart. Use headphones: with speakers, your microphone also hears the call and the same words appear under both You and Others. Linux has no system-audio capture yet. Not yet verified on real Windows or macOS hardware.
@@ -162,6 +164,8 @@ src-tauri/             desktop shell: microphone and system-audio capture (captu
 src/                   React + TypeScript UI: components/, hooks/, lib/ (all backend calls go through src/api.ts)
 prototype-web/         the original Python/browser prototype, kept for reference
 ```
+
+Meeting notes use the same on-device model: `crates/meetesh-core/src/assist/summary.rs` (prompts, parsing and the step-by-step plan for long meetings) is pure and tested with a scripted fake model; `src-tauri/src/commands/summary.rs` runs it in the background.
 
 Models are described in [`crates/meetesh-core/manifest.json`](crates/meetesh-core/manifest.json): id, URL, SHA-256, size, license and per-device defaults.
 

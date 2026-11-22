@@ -12,6 +12,7 @@
  *   ?mock=gpufail    live assist loads, but the GPU failed so the CPU is used
  *   ?mock=nosystem   system-audio capture unavailable (like Linux)
  *   ?mock=sysfail    system-audio capture is asked for but fails (permission denied)
+ *   ?mock=sumfail    writing the meeting notes fails
  *   ?mock=dlfail     the first live-assist download fails at 40% (Retry works)
  *
  * Never bundled into production builds: main.tsx imports it only when `import.meta.env.DEV`.
@@ -30,6 +31,17 @@ const SAMPLE_LINES = [
   "It has live transcription and then it also gives you hints.",
   "You can replay the audio and copy the transcript.",
 ];
+
+const SAMPLE_NOTES = `## Summary
+The team talked through the plan for Meetesh: live transcription, hints from an on-device model, and replaying and copying the transcript.
+
+## Decisions
+- Keep everything on the device
+- Ship live transcription before summaries
+
+## Action items
+- Sam writes the release notes by Thursday
+- Check the transcript on a real call`;
 
 export function installMock(variant: string) {
   let nextId = 3;
@@ -52,6 +64,7 @@ export function installMock(variant: string) {
     title,
     created_at: now() - ageSec,
     summary: "",
+    summary_model: "",
     transcript_model: "",
     agenda: "",
     status: "stopped",
@@ -65,7 +78,7 @@ export function installMock(variant: string) {
     variant === "empty"
       ? []
       : [
-          meeting(2, "Weekly product sync", 3600 * 3, { duration_ms: 52_000, transcript_model: "whisper-base.en", audio_dir: "/tmp/2", has_system_audio: true }),
+          meeting(2, "Weekly product sync", 3600 * 3, { duration_ms: 52_000, transcript_model: "whisper-base.en", audio_dir: "/tmp/2", has_system_audio: true, summary: SAMPLE_NOTES, summary_model: "gemma-4-e2b-it" }),
           meeting(1, "Meeting 2026-11-20 16:40", 3600 * 30, { duration_ms: 1_805_000, status: "recovered", audio_dir: "/tmp/1" }),
         ];
   transcripts.set(
@@ -96,6 +109,26 @@ export function installMock(variant: string) {
     );
   }
 
+  let summaryTimer: number | undefined;
+  let summaryFor: number | null = null;
+  function startSummarySim(id: number) {
+    summaryFor = id;
+    let step = 0;
+    const total = 3;
+    emit("summary-progress", { meeting_id: id, done: 0, total, finished: false, cancelled: false, error: null });
+    summaryTimer = window.setInterval(() => {
+      step++;
+      if (step < total) return void emit("summary-progress", { meeting_id: id, done: step, total, finished: false, cancelled: false, error: null });
+      clearInterval(summaryTimer);
+      summaryFor = null;
+      if (variant === "sumfail") return void emit("summary-progress", { meeting_id: id, done: 0, total, finished: true, cancelled: false, error: "The model did not return usable meeting notes. Try again." });
+      const m = find(id);
+      m.summary = SAMPLE_NOTES;
+      m.summary_model = "gemma-4-e2b-it";
+      emit("summary-progress", { meeting_id: id, done: total, total, finished: true, cancelled: false, error: null });
+    }, 1200);
+  }
+
   function stopRecordingSim() {
     timers.forEach((t) => clearInterval(t));
     timers = [];
@@ -107,6 +140,8 @@ export function installMock(variant: string) {
     const id = recordingId!;
     recordingId = null;
     emit("live-done", { meeting_id: id, full_pass_started: false });
+    // Like the app: notes are written by themselves once the transcript is complete.
+    if (modelInstalled && assistInstalled) window.setTimeout(() => startSummarySim(id), 300);
     return m;
   }
 
@@ -188,6 +223,22 @@ export function installMock(variant: string) {
             : { available: true, reason: "" };
         case "stop_recording":
           return stopRecordingSim();
+        case "summarize_meeting":
+          startSummarySim(a.id);
+          return null;
+        case "cancel_summary":
+          if (summaryFor !== null) {
+            clearInterval(summaryTimer);
+            emit("summary-progress", { meeting_id: summaryFor, done: 0, total: 3, finished: true, cancelled: true, error: null });
+            summaryFor = null;
+          }
+          return null;
+        case "active_summary":
+          return summaryFor;
+        case "clear_summary":
+          find(a.id).summary = "";
+          find(a.id).summary_model = "";
+          return find(a.id);
         case "export_audio":
           return "/Users/me/Library/Application Support/app.meetesh.desktop/recordings/2/meeting.wav";
         case "list_models":

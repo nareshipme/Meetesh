@@ -10,6 +10,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
 use crate::capture;
+use crate::commands::summary;
 use crate::commands::transcription::start_transcription;
 use crate::events::RECORDING_LEVEL;
 use crate::live::{finish_live, live_sink};
@@ -53,6 +54,8 @@ pub fn start_recording(
         return Err(Error::Other("A recording is already in progress".into()));
     }
     let meeting = state.db.lock().unwrap().begin_recording(meeting_id, &state.recordings_root)?;
+    // Notes for an earlier meeting must not compete with a live recording; they can be started again later.
+    summary::cancel_running(&state);
 
     let level_app = app.clone();
     let mut sinks: Vec<Box<dyn FrameSink>> = vec![
