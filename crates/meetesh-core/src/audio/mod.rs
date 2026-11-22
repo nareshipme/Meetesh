@@ -8,5 +8,10 @@ pub mod resample;
 pub mod sinks;
 pub mod wav;
 
-pub use pipeline::{FrameSink, Pusher, PusherFactory, RecordingSession, SessionReport};
+/// Where the other participants' track of a recording lives inside the meeting's audio directory.
+pub fn system_dir(audio_dir: &std::path::Path) -> std::path::PathBuf {
+    audio_dir.join("system")
+}
+
+pub use pipeline::{FrameSink, GapFiller, Pusher, PusherFactory, RecordingSession, SessionReport};
 pub use resample::{Resampler, TARGET_RATE};

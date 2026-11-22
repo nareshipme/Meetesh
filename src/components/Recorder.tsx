@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, InputDevice, Meeting } from "../api";
+import { api, InputDevice, Meeting, SystemAudioSupport } from "../api";
 import type { Notify } from "../hooks/useToasts";
 import { errorText, fmtDuration } from "../lib/format";
 import LevelMeter from "./LevelMeter";
@@ -25,10 +25,23 @@ function savedMic(): string {
   }
 }
 
+const SYSTEM_KEY = "meetesh.systemAudio";
+
+/** Capturing the other participants is on unless the user turned it off (and is remembered). */
+function savedSystemAudio(): boolean {
+  try {
+    return localStorage.getItem(SYSTEM_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
 /** Record / stop controls for one meeting: consent notice, microphone choice, timer, level meter. */
 export default function Recorder({ meeting, recording, notify, autoConsent, onConsentClosed, onChange }: Props) {
   const [devices, setDevices] = useState<InputDevice[]>([]);
   const [device, setDevice] = useState(savedMic);
+  const [systemSupport, setSystemSupport] = useState<SystemAudioSupport | null>(null);
+  const [systemAudio, setSystemAudio] = useState(savedSystemAudio);
   const [consent, setConsent] = useState(autoConsent && meeting.duration_ms === 0);
   const confirmRef = useRef<HTMLButtonElement>(null);
   const [level, setLevel] = useState(0);
@@ -47,6 +60,10 @@ export default function Recorder({ meeting, recording, notify, autoConsent, onCo
       .catch((e) => notify("error", errorText(e)));
   }, [notify]);
 
+  useEffect(() => {
+    api.systemAudioSupport().then(setSystemSupport).catch(() => setSystemSupport(null));
+  }, []);
+
   // When the consent notice opens, focus its confirm button so Enter starts recording.
   useEffect(() => {
     if (consent) confirmRef.current?.focus();
@@ -58,6 +75,15 @@ export default function Recorder({ meeting, recording, notify, autoConsent, onCo
       localStorage.setItem(MIC_KEY, name);
     } catch {
       /* remembering the microphone is a convenience only */
+    }
+  }
+
+  function chooseSystemAudio(on: boolean) {
+    setSystemAudio(on);
+    try {
+      localStorage.setItem(SYSTEM_KEY, on ? "on" : "off");
+    } catch {
+      /* a convenience only */
     }
   }
 
@@ -83,7 +109,9 @@ export default function Recorder({ meeting, recording, notify, autoConsent, onCo
     closeConsent(true);
     setBusy(true);
     try {
-      await api.startRecording(meeting.id, device || undefined);
+      const started = await api.startRecording(meeting.id, device || undefined, systemSupport?.available && systemAudio);
+      // The microphone is recording; only the other participants could not be captured.
+      if (started.system_audio_error) notify("error", `${started.system_audio_error} Recording your microphone only.`);
     } catch (e) {
       notify("error", errorText(e));
     }
@@ -112,6 +140,7 @@ export default function Recorder({ meeting, recording, notify, autoConsent, onCo
           {fmtDuration(elapsed)}
         </span>
         <LevelMeter level={level} />
+        {meeting.has_system_audio && <span className="chip chip-busy" title="The sound this computer plays is recorded as “Others”">+ Others</span>}
       </div>
     );
   }
@@ -132,6 +161,13 @@ export default function Recorder({ meeting, recording, notify, autoConsent, onCo
           Make sure everyone in the meeting knows it is being recorded. Recording without consent may be illegal where you
           live.
         </p>
+        {systemSupport?.available && (
+          <label className="check">
+            <input type="checkbox" checked={systemAudio} onChange={(e) => chooseSystemAudio(e.target.checked)} />
+            Also record the other participants (sound this computer plays, such as a call)
+          </label>
+        )}
+        {systemSupport && !systemSupport.available && <p className="muted small">{systemSupport.reason}</p>}
         <div className="row">
           <button ref={confirmRef} className="btn btn-danger" onClick={start} disabled={busy}>
             ● Everyone knows, start recording

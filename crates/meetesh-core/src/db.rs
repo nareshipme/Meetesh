@@ -9,7 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 
-use crate::asr::TranscriptSegment;
+use crate::asr::{Source, TranscriptSegment};
 use crate::error::{Error, Result};
 
 const MIGRATIONS: &[&str] = &[
@@ -44,6 +44,9 @@ const MIGRATIONS: &[&str] = &[
         AND CAST(substr(title, 9) AS INTEGER) = created_at;",
     // 5: optional goals/agenda the user types before a meeting, used as context for live hints
     "ALTER TABLE meetings ADD COLUMN agenda TEXT NOT NULL DEFAULT '';",
+    // 6: a second audio track (the other participants, from system audio) and which track a segment came from
+    "ALTER TABLE meetings ADD COLUMN has_system_audio INTEGER NOT NULL DEFAULT 0;
+     ALTER TABLE transcript_segments ADD COLUMN source TEXT NOT NULL DEFAULT 'mic';",
 ];
 
 /// `recording`: audio is being captured. `stopped`: finished normally.
@@ -54,7 +57,7 @@ pub mod status {
     pub const RECOVERED: &str = "recovered";
 }
 
-const COLS: &str = "id, title, created_at, summary, status, duration_ms, audio_dir, transcript_model, agenda";
+const COLS: &str = "id, title, created_at, summary, status, duration_ms, audio_dir, transcript_model, agenda, has_system_audio";
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct Meeting {
@@ -69,6 +72,9 @@ pub struct Meeting {
     pub transcript_model: String,
     /// Goals or agenda typed by the user; context for live hints.
     pub agenda: String,
+    /// True when the other participants' audio (system audio) was recorded as a second track,
+    /// in `audio_dir/system`.
+    pub has_system_audio: bool,
 }
 
 pub struct Db {
@@ -172,8 +178,8 @@ impl Db {
         tx.execute("DELETE FROM transcript_segments WHERE meeting_id = ?1", params![id])?;
         for s in segments {
             tx.execute(
-                "INSERT INTO transcript_segments (meeting_id, start_ms, end_ms, text) VALUES (?1, ?2, ?3, ?4)",
-                params![id, s.start_ms, s.end_ms, s.text],
+                "INSERT INTO transcript_segments (meeting_id, start_ms, end_ms, text, source) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![id, s.start_ms, s.end_ms, s.text, s.source.as_str()],
             )?;
         }
         tx.execute("UPDATE meetings SET transcript_model = ?1 WHERE id = ?2", params![model_id, id])?;
@@ -184,8 +190,8 @@ impl Db {
     /// Append one segment (live transcription).
     pub fn append_transcript_segment(&self, id: i64, model_id: &str, s: &TranscriptSegment) -> Result<()> {
         self.conn.execute(
-            "INSERT INTO transcript_segments (meeting_id, start_ms, end_ms, text) VALUES (?1, ?2, ?3, ?4)",
-            params![id, s.start_ms, s.end_ms, s.text],
+            "INSERT INTO transcript_segments (meeting_id, start_ms, end_ms, text, source) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![id, s.start_ms, s.end_ms, s.text, s.source.as_str()],
         )?;
         self.conn.execute("UPDATE meetings SET transcript_model = ?1 WHERE id = ?2", params![model_id, id])?;
         Ok(())
@@ -193,15 +199,25 @@ impl Db {
 
     pub fn get_transcript(&self, id: i64) -> Result<Vec<TranscriptSegment>> {
         let mut stmt = self.conn.prepare(
-            "SELECT start_ms, end_ms, text FROM transcript_segments WHERE meeting_id = ?1 ORDER BY start_ms, id",
+            "SELECT start_ms, end_ms, text, source FROM transcript_segments WHERE meeting_id = ?1 ORDER BY start_ms, id",
         )?;
         let rows = stmt.query_map(params![id], |r| {
-            Ok(TranscriptSegment { start_ms: r.get(0)?, end_ms: r.get(1)?, text: r.get(2)? })
+            Ok(TranscriptSegment::new(r.get(0)?, r.get(1)?, r.get::<_, String>(2)?)
+                .from_source(Source::parse(&r.get::<_, String>(3)?)))
         })?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
-    /// Deletes the meeting and its audio files (NFR-02).
+    /// Record that the other participants' audio was captured as a second track (on the same
+    /// clock as the microphone).
+    pub fn set_system_audio(&self, id: i64) -> Result<Meeting> {
+        let n = self.conn.execute("UPDATE meetings SET has_system_audio = 1 WHERE id = ?1", params![id])?;
+        if n == 0 {
+            return Err(Error::NotFound(id));
+        }
+        self.get_meeting(id)
+    }
+
     pub fn set_agenda(&self, id: i64, agenda: &str) -> Result<Meeting> {
         let n = self.conn.execute("UPDATE meetings SET agenda = ?1 WHERE id = ?2", params![agenda, id])?;
         if n == 0 {
@@ -210,6 +226,7 @@ impl Db {
         self.get_meeting(id)
     }
 
+    /// Deletes the meeting and its audio files (NFR-02).
     pub fn delete_meeting(&self, id: i64) -> Result<()> {
         let m = self.get_meeting(id)?;
         self.conn.execute("DELETE FROM meetings WHERE id = ?1", params![id])?;
@@ -290,6 +307,7 @@ fn row_to_meeting(r: &rusqlite::Row<'_>) -> rusqlite::Result<Meeting> {
         audio_dir: r.get(6)?,
         transcript_model: r.get(7)?,
         agenda: r.get(8)?,
+        has_system_audio: r.get::<_, i64>(9)? != 0,
     })
 }
 
@@ -440,7 +458,7 @@ mod tests {
     fn transcript_roundtrip_and_cascade_delete() {
         let db = Db::open_in_memory().unwrap();
         let m = db.create_meeting(Some("T")).unwrap();
-        let seg = |a, b, t: &str| TranscriptSegment { start_ms: a, end_ms: b, text: t.into() };
+        let seg = |a, b, t: &str| TranscriptSegment::new(a, b, t);
         db.replace_transcript(m.id, "whisper-base.en", &[seg(2000, 3000, "second"), seg(0, 1000, "first")]).unwrap();
         let t = db.get_transcript(m.id).unwrap();
         assert_eq!(t.iter().map(|s| s.text.as_str()).collect::<Vec<_>>(), ["first", "second"]);
@@ -461,5 +479,49 @@ mod tests {
         assert_eq!(m.agenda, "");
         assert_eq!(db.set_agenda(m.id, "Decide the launch date").unwrap().agenda, "Decide the launch date");
         assert!(matches!(db.set_agenda(999, "x"), Err(Error::NotFound(999))));
+    }
+
+    #[test]
+    fn segments_remember_their_track_and_interleave_by_time() {
+        let db = Db::open_in_memory().unwrap();
+        let m = db.create_meeting(Some("Call")).unwrap();
+        assert!(!m.has_system_audio);
+        let segs = [
+            TranscriptSegment::new(0, 900, "hello").from_source(Source::Mic),
+            TranscriptSegment::new(1000, 2000, "hi there").from_source(Source::System),
+            TranscriptSegment::new(2500, 3000, "great").from_source(Source::Mic),
+        ];
+        db.replace_transcript(m.id, "m", &segs).unwrap();
+        db.append_transcript_segment(m.id, "m", &TranscriptSegment::new(1500, 1800, "sure").from_source(Source::System)).unwrap();
+        let t = db.get_transcript(m.id).unwrap();
+        assert_eq!(
+            t.iter().map(|s| (s.text.as_str(), s.source)).collect::<Vec<_>>(),
+            [("hello", Source::Mic), ("hi there", Source::System), ("sure", Source::System), ("great", Source::Mic)]
+        );
+        assert!(db.set_system_audio(m.id).unwrap().has_system_audio);
+        assert!(matches!(db.set_system_audio(999), Err(Error::NotFound(999))));
+    }
+
+    #[test]
+    fn upgrading_from_schema_5_keeps_old_transcripts_as_microphone() {
+        let path = std::env::temp_dir().join(format!("meetesh-v5-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        {
+            // Build a v5 database by hand, with one saved transcript.
+            let conn = Connection::open(&path).unwrap();
+            for sql in &MIGRATIONS[..5] {
+                conn.execute_batch(sql).unwrap();
+            }
+            conn.pragma_update(None, "user_version", 5u32).unwrap();
+            conn.execute("INSERT INTO meetings (title, created_at) VALUES ('Old', 1)", []).unwrap();
+            conn.execute("INSERT INTO transcript_segments (meeting_id, start_ms, end_ms, text) VALUES (1, 0, 10, 'legacy')", []).unwrap();
+        }
+        let db = Db::open(&path).unwrap();
+        assert_eq!(db.schema_version().unwrap() as usize, MIGRATIONS.len());
+        let t = db.get_transcript(1).unwrap();
+        assert_eq!(t[0].source, Source::Mic);
+        assert!(!db.get_meeting(1).unwrap().has_system_audio);
+        drop(db);
+        std::fs::remove_file(path).ok();
     }
 }

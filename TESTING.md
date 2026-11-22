@@ -1,4 +1,4 @@
-# Manual testing (Slices 0 to 3)
+# Manual testing
 
 Run these on a real machine with a microphone. Automated tests cover the core logic; these cover what they
 cannot: real audio hardware, OS permissions, and the UI.
@@ -91,6 +91,20 @@ MEETESH_TEST_MODEL=/path/to/ggml-tiny.en.bin \
 - [ ] Compare the live transcript with **Re-transcribe** on the same recording: they should be close. A big difference means the live path is losing words.
 - [ ] If words are still missing, note what you said, how far away you were, which microphone, and whether the level meter moved. Export the audio if you are happy to share it.
 
+**System audio: the other participants** (Windows and macOS 13+; this needs a real machine, it has not been run on real hardware yet)
+- [ ] The consent step shows "Also record the other participants (sound this computer plays, such as a call)", ticked. On Linux it is replaced by a note that this is not available yet.
+- [ ] **macOS:** click "Everyone knows". macOS asks for **Screen & System Audio Recording** permission for Meetesh (or for your terminal when running `npm run tauri dev`). Allow it, then quit and reopen the app (macOS only applies the permission after a restart) and record again.
+- [ ] **Windows:** no prompt. Recording starts. If you have no speakers or headphones enabled you get a message and the microphone recording carries on.
+- [ ] Wear headphones. Start a recording, play a YouTube video or join a call. A "+ Others" chip appears next to the timer.
+- [ ] Within a few seconds the video's speech appears in the transcript labelled **Others**; you speaking appears as **You**. Timestamps of the two sides interleave sensibly.
+- [ ] Stay silent and play nothing for 30 s, then play speech: the Others text appears with a timestamp near 0:30, not near 0:00 (the track keeps real time while nothing plays; Windows delivers no audio during silence, which is the case this checks).
+- [ ] Untick the box, record again: no "+ Others" chip, no Others lines. Quit and reopen: the choice was remembered.
+- [ ] macOS, permission denied (remove Meetesh in System Settings > Privacy & Security > Screen & System Audio Recording): you see "Could not capture system audio … Recording your microphone only." and the microphone recording works.
+- [ ] Stop, then **Re-transcribe**: both sides come back, still labelled.
+- [ ] Ask for a **✦ Hint** after the other side asked you a question: the hint should answer it (the model is told which lines are Others).
+- [ ] Meetesh's own sounds are not recorded back (macOS excludes the app). Speakers instead of headphones: expect your voice to appear twice (You and Others); that is the known limit.
+- [ ] Delete the meeting: the `system` folder in the recording folder is removed with it.
+
 **Stopping**
 - [ ] Click **Stop**: it returns instantly. The meeting shows "Recorded m:ss".
 - [ ] After a few seconds the transcript is complete (a gap-filling pass may run if live fell behind).
@@ -130,4 +144,4 @@ Logs are written by the Tauri log plugin to the app log folder (on Linux, `logs/
 Note your OS, CPU, whether the model was tiny or base, and the relevant log lines (no audio or transcript needed).
 
 ## Known limits right now
-Microphone only (no system audio), English models only, one recording per meeting, no summaries or live hints yet.
+No system audio on Linux, English models only, one recording per meeting, no summaries yet, hints only on request.

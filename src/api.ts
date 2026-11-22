@@ -12,6 +12,8 @@ export interface Meeting {
   status: "stopped" | "recording" | "recovered";
   duration_ms: number;
   audio_dir: string;
+  /** The other participants (sound from this computer) were recorded as a second track. */
+  has_system_audio: boolean;
 }
 
 export interface InputDevice {
@@ -23,6 +25,20 @@ export interface TranscriptSegment {
   start_ms: number;
   end_ms: number;
   text: string;
+  /** "mic" = you, "system" = the other participants. */
+  source: "mic" | "system";
+}
+
+export interface SystemAudioSupport {
+  available: boolean;
+  /** Why not, in words for the user. Empty when available. */
+  reason: string;
+}
+
+export interface StartedRecording {
+  meeting: Meeting;
+  /** Set when the other participants were asked for but could not be captured. */
+  system_audio_error: string | null;
 }
 
 export interface ModelInfo {
@@ -112,8 +128,9 @@ export const api = {
   deleteMeeting: (id: number) => invoke<void>("delete_meeting", { id }),
   listInputDevices: () => invoke<InputDevice[]>("list_input_devices"),
   activeRecording: () => invoke<number | null>("active_recording"),
-  startRecording: (meetingId: number, device?: string) =>
-    invoke<Meeting>("start_recording", { meetingId, device }),
+  systemAudioSupport: () => invoke<SystemAudioSupport>("system_audio_support"),
+  startRecording: (meetingId: number, device?: string, systemAudio?: boolean) =>
+    invoke<StartedRecording>("start_recording", { meetingId, device, systemAudio }),
   stopRecording: () => invoke<Meeting>("stop_recording"),
   exportAudio: (id: number) => invoke<string>("export_audio", { id }),
   listModels: () => invoke<ModelInfo[]>("list_models"),

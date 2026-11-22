@@ -4,21 +4,23 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::asr::chunker::{Chunk, Chunker, ChunkerConfig};
-use crate::asr::{is_noise_marker, TranscriptSegment, Transcriber};
+use crate::asr::{is_noise_marker, Source, TranscriptSegment, Transcriber};
 use crate::audio::wav;
 use crate::{Error, Result};
 
-/// Transcribe one chunk; returns segments with timestamps relative to the recording start.
+/// Transcribe one chunk of the microphone; returns segments with timestamps relative to the recording start.
 pub fn transcribe_chunk(t: &dyn Transcriber, chunk: &Chunk) -> Result<Vec<TranscriptSegment>> {
+    transcribe_chunk_on(t, chunk, Source::Mic)
+}
+
+/// Like `transcribe_chunk`, for any track: segments are tagged with its source. Every track runs on
+/// the meeting clock (the capture layer pads a late-starting track with silence).
+pub fn transcribe_chunk_on(t: &dyn Transcriber, chunk: &Chunk, source: Source) -> Result<Vec<TranscriptSegment>> {
     let offset = chunk.start_ms();
     Ok(t.transcribe(&chunk.samples)?
         .into_iter()
         .filter(|s| !is_noise_marker(&s.text))
-        .map(|s| TranscriptSegment {
-            start_ms: s.start_ms + offset,
-            end_ms: s.end_ms + offset,
-            text: s.text.trim().to_string(),
-        })
+        .map(|s| TranscriptSegment::new(s.start_ms + offset, s.end_ms + offset, s.text.trim()).from_source(source))
         .collect())
 }
 
@@ -42,6 +44,20 @@ pub fn transcribe_recording_with(
     t: &dyn Transcriber,
     cfg: ChunkerConfig,
     cancel: &AtomicBool,
+    on_progress: impl FnMut(f32),
+    on_segments: impl FnMut(&[TranscriptSegment]),
+) -> Result<Vec<TranscriptSegment>> {
+    transcribe_track(dir, Source::Mic, t, cfg, cancel, on_progress, on_segments)
+}
+
+/// Transcribe the segment files in `dir` as one track of a meeting (the microphone, or the
+/// other participants' audio).
+pub fn transcribe_track(
+    dir: &Path,
+    source: Source,
+    t: &dyn Transcriber,
+    cfg: ChunkerConfig,
+    cancel: &AtomicBool,
     mut on_progress: impl FnMut(f32),
     mut on_segments: impl FnMut(&[TranscriptSegment]),
 ) -> Result<Vec<TranscriptSegment>> {
@@ -54,7 +70,7 @@ pub fn transcribe_recording_with(
         if cancel.load(Ordering::Relaxed) {
             return Err(Error::Cancelled);
         }
-        let segs = transcribe_chunk(t, &chunk)?;
+        let segs = transcribe_chunk_on(t, &chunk, source)?;
         if !segs.is_empty() {
             on_segments(&segs);
             all.extend(segs);
@@ -95,8 +111,8 @@ mod tests {
         fn transcribe(&self, samples: &[f32]) -> Result<Vec<TranscriptSegment>> {
             let ms = (samples.len() / 16) as i64;
             Ok(vec![
-                TranscriptSegment { start_ms: 0, end_ms: ms, text: format!(" heard {ms} ms ") },
-                TranscriptSegment { start_ms: 0, end_ms: 1, text: "[BLANK_AUDIO]".into() },
+                TranscriptSegment::new(0, ms, format!(" heard {ms} ms ")),
+                TranscriptSegment::new(0, 1, "[BLANK_AUDIO]"),
             ])
         }
     }
@@ -148,6 +164,16 @@ mod tests {
         let dir = write_recording("silent", &[(false, 4_000)]);
         let out = transcribe_recording(&dir, &Fake, &AtomicBool::new(false), |_| {}, |_| {}).unwrap();
         assert!(out.is_empty());
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_track_is_tagged_with_its_source() {
+        let dir = write_recording("track", &[(false, 500), (true, 1500), (false, 800)]);
+        let out = transcribe_track(&dir, Source::System, &Fake, ChunkerConfig::default(), &AtomicBool::new(false), |_| {}, |_| {}).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].source, Source::System);
+        assert!(out[0].start_ms >= 300, "start {}", out[0].start_ms);
         std::fs::remove_dir_all(dir).ok();
     }
 }

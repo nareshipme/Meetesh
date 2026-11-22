@@ -1,8 +1,10 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use meetesh_core::asr::run::transcribe_recording;
-use meetesh_core::{Error, Result, TranscriptSegment};
+use meetesh_core::asr::chunker::ChunkerConfig;
+use meetesh_core::asr::run::transcribe_track;
+use meetesh_core::audio::{system_dir, wav};
+use meetesh_core::{Error, Result, Source, TranscriptSegment};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::events::{TranscribeEvent, TRANSCRIBE_PROGRESS};
@@ -62,13 +64,35 @@ pub fn start_transcription(app: &AppHandle, meeting_id: i64) -> Result<()> {
         };
         let outcome = (|| -> Result<()> {
             let transcriber = get_transcriber(&app)?;
-            let segments = transcribe_recording(
-                std::path::Path::new(&meeting.audio_dir),
+            // The microphone, then (if it was recorded) the other participants' track. Progress is
+            // shared out by how much audio each has.
+            let dir = std::path::Path::new(&meeting.audio_dir);
+            let sys_dir = system_dir(dir);
+            let mic_ms = wav::duration_ms(dir)? as f32;
+            let sys_ms = if meeting.has_system_audio { wav::duration_ms(&sys_dir).unwrap_or(0) as f32 } else { 0.0 };
+            let total = (mic_ms + sys_ms).max(1.0);
+            let cfg = ChunkerConfig::default;
+            let mut segments = transcribe_track(
+                dir,
+                Source::Mic,
                 transcriber.as_ref(),
+                cfg(),
                 &cancel,
-                |p| emit(p, false, false, None),
+                |p| emit(p * mic_ms / total, false, false, None),
                 |_| {},
             )?;
+            if sys_ms > 0.0 {
+                segments.extend(transcribe_track(
+                    &sys_dir,
+                    Source::System,
+                    transcriber.as_ref(),
+                    cfg(),
+                    &cancel,
+                    |p| emit((mic_ms + p * sys_ms) / total, false, false, None),
+                    |_| {},
+                )?);
+                segments.sort_by_key(|s| s.start_ms);
+            }
             st.db.lock().unwrap().replace_transcript(meeting_id, &entry.id, &segments)?;
             log::info!("transcribed meeting {meeting_id}: {} segments", segments.len()); // never log text
             Ok(())

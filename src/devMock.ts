@@ -10,6 +10,8 @@
  *   ?mock=loading    models installed; live assist stays stuck at "Loading 42%"
  *   ?mock=loadfail   live assist fails to load until you press Retry
  *   ?mock=gpufail    live assist loads, but the GPU failed so the CPU is used
+ *   ?mock=nosystem   system-audio capture unavailable (like Linux)
+ *   ?mock=sysfail    system-audio capture is asked for but fails (permission denied)
  *   ?mock=dlfail     the first live-assist download fails at 40% (Retry works)
  *
  * Never bundled into production builds: main.tsx imports it only when `import.meta.env.DEV`.
@@ -55,6 +57,7 @@ export function installMock(variant: string) {
     status: "stopped",
     duration_ms: 0,
     audio_dir: "",
+    has_system_audio: false,
     ...extra,
   });
 
@@ -62,18 +65,19 @@ export function installMock(variant: string) {
     variant === "empty"
       ? []
       : [
-          meeting(2, "Weekly product sync", 3600 * 3, { duration_ms: 52_000, transcript_model: "whisper-base.en", audio_dir: "/tmp/2" }),
+          meeting(2, "Weekly product sync", 3600 * 3, { duration_ms: 52_000, transcript_model: "whisper-base.en", audio_dir: "/tmp/2", has_system_audio: true }),
           meeting(1, "Meeting 2026-11-20 16:40", 3600 * 30, { duration_ms: 1_805_000, status: "recovered", audio_dir: "/tmp/1" }),
         ];
   transcripts.set(
     2,
-    SAMPLE_LINES.map((text, i) => ({ start_ms: 2000 + i * 7000, end_ms: 6000 + i * 7000, text })),
+    SAMPLE_LINES.map((text, i) => ({ start_ms: 2000 + i * 7000, end_ms: 6000 + i * 7000, text, source: i % 3 === 1 ? "mic" : "system" })),
   );
 
   const find = (id: number) => meetings.find((m) => m.id === id)!;
 
-  function startRecordingSim(id: number) {
+  function startRecordingSim(id: number, withSystem: boolean) {
     recordingId = id;
+    find(id).has_system_audio = withSystem;
     find(id).status = "recording";
     const t0 = Date.now();
     let line = 0;
@@ -85,7 +89,7 @@ export function installMock(variant: string) {
         emit("recording-level", rms);
       }, 100),
       window.setInterval(() => {
-        const seg = { start_ms: Date.now() - t0, end_ms: Date.now() - t0 + 2000, text: SAMPLE_LINES[line++ % SAMPLE_LINES.length] };
+        const seg = { start_ms: Date.now() - t0, end_ms: Date.now() - t0 + 2000, text: SAMPLE_LINES[line++ % SAMPLE_LINES.length], source: (withSystem && line % 2 === 0 ? "system" : "mic") as "mic" | "system" };
         transcripts.get(id)!.push(seg);
         if (modelInstalled) emit("live-segments", { meeting_id: id, segments: [seg] });
       }, 2500),
@@ -172,8 +176,16 @@ export function installMock(variant: string) {
         case "active_recording":
           return recordingId;
         case "start_recording":
-          startRecordingSim(a.meetingId);
-          return find(a.meetingId);
+          if (a.systemAudio && variant === "sysfail") {
+            startRecordingSim(a.meetingId, false);
+            return { meeting: find(a.meetingId), system_audio_error: "Could not capture system audio: permission denied." };
+          }
+          startRecordingSim(a.meetingId, !!a.systemAudio);
+          return { meeting: find(a.meetingId), system_audio_error: null };
+        case "system_audio_support":
+          return variant === "nosystem"
+            ? { available: false, reason: "Capturing the other participants is not available on Linux yet. Only your microphone is recorded." }
+            : { available: true, reason: "" };
         case "stop_recording":
           return stopRecordingSim();
         case "export_audio":

@@ -15,7 +15,7 @@ The frontend can run in a plain browser against a fake backend (no Rust build, m
 ```bash
 npm install && npm run dev
 ```
-Then open http://localhost:1420/?mock (or `?mock=empty`, `?mock=nomodel`). The fake backend lives in `src/devMock.ts`, is only loaded in development, and is not part of production builds.
+Then open http://localhost:1420/?mock (or `?mock=empty`, `?mock=nomodel`, `?mock=nosystem`, `?mock=sysfail`; the full list is at the top of `src/devMock.ts`). The fake backend lives in `src/devMock.ts`, is only loaded in development, and is not part of production builds.
 
 ## Principles
 These keep the project private, portable and easy to change:

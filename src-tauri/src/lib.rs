@@ -6,6 +6,7 @@
 //! - `live`: glue for live transcription
 //! - `events`: events pushed to the UI
 //! - `capture`: microphone capture (platform specific)
+//! - `system_audio`: capturing the other participants (platform specific)
 
 mod capture;
 mod commands;
@@ -13,6 +14,7 @@ mod events;
 mod live;
 mod runtime;
 mod state;
+mod system_audio;
 
 use commands::{assist, meetings, models, recording, transcription};
 use state::AppState;
@@ -43,6 +45,7 @@ pub fn run() {
             meetings::set_agenda,
             recording::list_input_devices,
             recording::active_recording,
+            recording::system_audio_support,
             recording::start_recording,
             recording::stop_recording,
             recording::export_audio,

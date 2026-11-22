@@ -2,7 +2,7 @@
 //! unit-tested and easy to iterate on.
 
 use crate::assist::{ChatMessage, ChatRole};
-use crate::TranscriptSegment;
+use crate::{Source, TranscriptSegment};
 
 /// Returned by the model when it has nothing worth saying; the UI shows a neutral message.
 pub const NO_HINT: &str = "NO_HINT";
@@ -37,6 +37,15 @@ impl Default for Budget {
     }
 }
 
+/// Used when the other participants were recorded too: lines say who spoke.
+const SPEAKER_NOTE: &str = "Lines starting with \"You:\" are the user; lines starting with \"Others:\" are the other \
+participants on the call (not told apart) and the transcript may contain recognition mistakes.";
+
+/// True if the transcript has both sides of a call, so lines should be labelled.
+fn has_others(segments: &[TranscriptSegment]) -> bool {
+    segments.iter().any(|s| s.source == Source::System)
+}
+
 fn stamp(ms: i64) -> String {
     let s = (ms.max(0) / 1000) as u64;
     format!("{}:{:02}", s / 60, s % 60)
@@ -48,9 +57,11 @@ pub fn recent_window(segments: &[TranscriptSegment], window_ms: i64) -> Vec<Tran
     segments.iter().filter(|s| s.end_ms >= newest - window_ms).cloned().collect()
 }
 
-/// The newest segments that fit in `max_chars`, formatted as `[m:ss] text` lines, oldest first.
+/// The newest segments that fit in `max_chars`, formatted as `[m:ss] text` lines, oldest first
+/// (`[m:ss] You: text` / `[m:ss] Others: text` when the other participants were recorded too).
 /// Whole segments only, so a sentence is never cut in half.
 pub fn transcript_tail(segments: &[TranscriptSegment], max_chars: usize) -> String {
+    let labelled = has_others(segments);
     let mut lines: Vec<String> = Vec::new();
     let mut used = 0usize;
     for seg in segments.iter().rev() {
@@ -58,7 +69,12 @@ pub fn transcript_tail(segments: &[TranscriptSegment], max_chars: usize) -> Stri
         if text.is_empty() {
             continue;
         }
-        let line = format!("[{}] {}", stamp(seg.start_ms), text);
+        let who = match (labelled, seg.source) {
+            (false, _) => "",
+            (true, Source::Mic) => "You: ",
+            (true, Source::System) => "Others: ",
+        };
+        let line = format!("[{}] {}{}", stamp(seg.start_ms), who, text);
         if used + line.len() + 1 > max_chars && !lines.is_empty() {
             break;
         }
@@ -91,7 +107,12 @@ pub fn build_hint_messages(ctx: &HintContext, budget: Budget) -> Vec<ChatMessage
     user.push_str("Transcript so far (most recent last):\n");
     user.push_str(&transcript_tail(&ctx.recent, budget.max_transcript_chars));
     user.push_str("\n\nWhat should I say or ask next?");
-    vec![ChatMessage::new(ChatRole::System, SYSTEM_PROMPT), ChatMessage::new(ChatRole::User, user)]
+    let system = if has_others(&ctx.recent) {
+        SYSTEM_PROMPT.replace("The transcript has no speaker names and may contain recognition mistakes.", SPEAKER_NOTE)
+    } else {
+        SYSTEM_PROMPT.to_string()
+    };
+    vec![ChatMessage::new(ChatRole::System, system), ChatMessage::new(ChatRole::User, user)]
 }
 
 /// Remove reasoning blocks some models emit (`<|channel>thought ... <channel|>`), keeping only the answer.
@@ -132,7 +153,7 @@ mod tests {
     use super::*;
 
     fn seg(start_ms: i64, text: &str) -> TranscriptSegment {
-        TranscriptSegment { start_ms, end_ms: start_ms + 1000, text: text.into() }
+        TranscriptSegment::new(start_ms, start_ms + 1000, text)
     }
 
     #[test]
@@ -208,5 +229,22 @@ mod tests {
     fn clean_hint_removes_reasoning_blocks() {
         assert_eq!(clean_hint("<|channel>thought\nthe user asked...<channel|>Say yes.").as_deref(), Some("Say yes."));
         assert_eq!(clean_hint("<|channel>thought\nstill thinking"), None);
+    }
+
+    #[test]
+    fn lines_are_labelled_only_when_both_sides_of_a_call_were_recorded() {
+        let me = |t, s: &str| TranscriptSegment::new(t, t + 500, s);
+        let them = |t, s: &str| TranscriptSegment::new(t, t + 500, s).from_source(Source::System);
+        let both = [them(0, "Can you ship Friday?"), me(2_000, "Probably.")];
+        assert_eq!(transcript_tail(&both, 500), "[0:00] Others: Can you ship Friday?\n[0:02] You: Probably.");
+        // Mic only: exactly as before, so notes-only and microphone-only meetings are unchanged.
+        assert_eq!(transcript_tail(&[me(0, "Hello")], 500), "[0:00] Hello");
+
+        let ctx = HintContext { agenda: String::new(), recent: both.to_vec() };
+        let m = build_hint_messages(&ctx, Budget::default());
+        assert!(m[0].content.contains("\"Others:\""), "the model is told what the labels mean");
+        assert!(!m[0].content.contains("no speaker names"));
+        let mic_only = build_hint_messages(&HintContext { agenda: String::new(), recent: vec![me(0, "Hi")] }, Budget::default());
+        assert!(mic_only[0].content.contains("no speaker names"));
     }
 }

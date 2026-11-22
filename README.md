@@ -27,6 +27,9 @@ These show the interface running against the built-in sample-data backend (see [
 ![Recording with live text and a level meter](docs/screenshots/recording-live.png)
 *Recording: live text appears a few seconds behind speech.*
 
+![A call transcript with You and Others labels](docs/screenshots/transcript-you-others.png)
+*A call: your microphone and the other participants' audio, labelled You and Others.*
+
 ![Models loading in the background at startup](docs/screenshots/models-loading.png)
 *Models load in the background at startup, with progress.*
 
@@ -52,6 +55,7 @@ These show the interface running against the built-in sample-data backend (see [
 | Hints never slow down live transcription: while the transcriber has work pending, hint generation pauses (in small steps, bounded so a hint is never starved). Measured with both real models on a 4-core CPU: live text arrived over 30 s late on average (up to 50 s) while hints ran before, and 2.6 s late now, about the same as with no hints (2.3 s) | Working |
 | Optional meeting goals that keep hints on topic | Working |
 | One-click recording: **New recording** (Ctrl/Cmd+N) opens the consent notice straight away, so starting is one click plus Enter. The consent reminder is still shown before every recording. The microphone is chosen in the same step and remembered | Working |
+| **System audio: the other participants.** Tick "Also record the other participants" in the consent step and what the computer plays (a call in Zoom, Meet, Teams, a browser) is recorded as a second track, transcribed live next to your microphone, and shown as **You** / **Others**. Hints see who said what. Windows: WASAPI loopback of the default speakers. macOS 13+: ScreenCaptureKit (asks for the Screen & System Audio Recording permission). Linux: not yet. If the second track cannot start, the microphone recording carries on and you are told | Implemented and compiled for Windows and macOS in this environment, tested with synthetic audio; **not yet run on real Windows or macOS hardware** (see [TESTING.md](TESTING.md#system-audio-the-other-participants)) |
 | Meetings list, rename, delete (audio is deleted with the meeting), WAV export | Working |
 | Responsive, dark-mode-aware UI | Working |
 
@@ -61,7 +65,7 @@ These show the interface running against the built-in sample-data backend (see [
 |---|---|
 | Next | **Automatic hint triggers** (a question is asked, a long pause), a global hotkey, and a hint overlay that floats over other apps |
 | Then | AI summaries (local via Ollama, or Claude with your own key), search, Markdown export |
-| Then | System-audio capture so other participants are transcribed (per OS: WASAPI loopback, ScreenCaptureKit, PipeWire/PulseAudio) |
+| Then | System audio on Linux (PipeWire/PulseAudio monitor), and capturing one app or window instead of everything |
 | Then | Settings and onboarding, signed installers and auto-update |
 | Later | Mobile companion app, speaker labels, audio-file import |
 
@@ -83,7 +87,8 @@ Tracked as GitHub issues:
 - Models may run on the CPU even when a GPU is present ([#3](https://github.com/nareshipme/Meetesh/issues/3)). Speech recognition (Whisper) always runs on the CPU. On a CPU-only 4-core Linux machine a hint takes about 6 s.
 - A hint can take longer to appear while people are talking, because it yields the processor to live transcription (a few seconds longer on a CPU-only machine; the transcript is never held up).
 - Some words can still be missing or wrong in the live transcript ([#4](https://github.com/nareshipme/Meetesh/issues/4)). Faint voices used to be dropped entirely; that is fixed on synthetic test speech but not yet confirmed on real recordings. The default speech model (Whisper base) also simply mishears words, more so with accents and noise; a larger model is not offered yet.
-- Microphone only. It cannot yet capture the other side of a call.
+- The other side of a call is captured as one "Others" track: everything the computer plays, so music or notification sounds are included, and several remote speakers are not told apart. Use headphones: with speakers, your microphone also hears the call and the same words appear under both You and Others. Linux has no system-audio capture yet. Not yet verified on real Windows or macOS hardware.
+- Packaged macOS builds require macOS 13 or newer (ScreenCaptureKit audio).
 - English-only speech models are in the manifest for now.
 - One recording per meeting.
 - Whisper can mishear words, especially with noise or accents. The transcript is editable data, not ground truth.
@@ -143,6 +148,9 @@ The Vulkan build has been verified to compile, load the model onto a Vulkan devi
 mic (cpal) ─> resample to 16 kHz mono ─┬─> segmented WAV on disk   (crash-safe)
                                        ├─> level meter
                                        └─> VAD chunker ─> bounded queue ─> Whisper worker ─> transcript (SQLite) ─> UI
+
+system audio (WASAPI loopback / ScreenCaptureKit) ─> same pipeline, own folder (recordings/<id>/system) and own
+                                       VAD chunker, tagged "Others"; padded with silence so both tracks share one clock
 ```
 
 - The audio callback never blocks. Slow transcription drops live chunks (counted) instead of slowing capture, and a full pass over the saved audio fills any gaps after you stop.
@@ -150,7 +158,7 @@ mic (cpal) ─> resample to 16 kHz mono ─┬─> segmented WAV on disk   (cras
 
 ```
 crates/meetesh-core/   platform-neutral core: storage, audio pipeline, ASR, model manager (no desktop-only deps)
-src-tauri/             desktop shell: microphone capture and thin Tauri commands over the core (commands/, state, live, events)
+src-tauri/             desktop shell: microphone and system-audio capture (capture.rs, system_audio/) and thin Tauri commands over the core (commands/, state, live, events)
 src/                   React + TypeScript UI: components/, hooks/, lib/ (all backend calls go through src/api.ts)
 prototype-web/         the original Python/browser prototype, kept for reference
 ```
@@ -202,7 +210,7 @@ Issues, ideas and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING
 
 ## Privacy and recording consent
 
-Meetesh does not send audio or transcripts anywhere. The only network access is downloading models you ask for (and, once added, an optional summary provider you choose). The app shows a consent reminder before each recording, but **you are responsible for following the recording laws and meeting etiquette that apply to you**. Many places require everyone's consent.
+Meetesh does not send audio or transcripts anywhere. Capturing the other participants records everything your computer plays, so tell the people on the call, as with any recording. The only network access is downloading models you ask for (and, once added, an optional summary provider you choose). The app shows a consent reminder before each recording, but **you are responsible for following the recording laws and meeting etiquette that apply to you**. Many places require everyone's consent.
 
 ## License
 
