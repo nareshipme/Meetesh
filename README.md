@@ -149,6 +149,8 @@ Only the live-assist model (llama.cpp) can use the GPU. Speech recognition runs 
 | macOS | Metal is compiled in automatically. If it fails on your Mac the app falls back to the CPU (see Troubleshooting). |
 | Windows, Linux | **Opt-in** Vulkan (a normal build has no GPU support at all, and the sidebar then says "CPU (no GPU support in this build)") (works with NVIDIA, AMD and Intel GPUs). Install the Vulkan SDK first (Windows: LunarG SDK; Ubuntu: `sudo apt install libvulkan-dev glslc spirv-headers`), then run `npm run tauri:gpu` (the same as `npm run tauri dev -- --features vulkan`). |
 
+On Windows, building with Vulkan puts llama.cpp's shader generator in a very deep folder. If the build fails with `CMake error : Not a file: ...cmake_install.cmake` (and "cannot find the batch label specified"), the path is over Windows' 260-character limit: build with a short target folder (`set CARGO_TARGET_DIR=C:\t` before `npm run tauri:gpu`) or turn on Windows long paths. CI reproduced this and the SDK itself installs and is found fine.
+
 The Vulkan build has been verified to compile, load the model onto a Vulkan device and generate with it on Linux using a software Vulkan driver (so the speed on a real GPU is not yet measured). CUDA is not wired up yet.
 
 ## Model choices

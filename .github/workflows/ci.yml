@@ -61,6 +61,11 @@ jobs:
   windows-vulkan:
     runs-on: windows-latest
     continue-on-error: true
+    env:
+      # The first run failed inside llama.cpp's vulkan-shaders-gen sub-build with
+      # "CMake error: Not a file: ...\cmake_install.cmake": its build path is longer than the Windows
+      # 260-character limit under the default target folder. A short target folder avoids it.
+      CARGO_TARGET_DIR: C:\t
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
