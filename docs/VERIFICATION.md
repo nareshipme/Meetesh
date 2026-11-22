@@ -1,0 +1,40 @@
+# What has been verified by hand
+
+Automated tests and CI say the code compiles and its logic works. This page tracks what a person has actually **tried on real hardware**, because that is what the tests cannot show. The steps for each row are in [TESTING.md](../TESTING.md).
+
+How to read it:
+- **Verified** = a person did it on the named OS/hardware and it worked. Add the date and who.
+- **Failed** = tried and it did not work; link the issue.
+- **Not yet** = only automated checks exist.
+
+Rule: when someone reports a manual result, update this table in the same change (see the definition of done in [CONTRIBUTING.md](../CONTRIBUTING.md)). Never mark a row verified from CI alone.
+
+| Area | What to check | Automated evidence | Manual status |
+|---|---|---|---|
+| App opens | `npm run tauri dev` starts and shows the UI | CI builds on Linux, macOS, Windows | **Verified** on macOS and Windows (maintainer) |
+| Live assist hint quality | Hints are short, relevant, useful | Real Gemma 4 E2B test on scripted dialogue | **Verified** "good enough" on macOS/Windows (maintainer, first version) |
+| Microphone recording, crash recovery, export | TESTING.md: Recording, Stopping, Crash recovery | e2e test with synthetic audio | Not yet (beyond the app opening) |
+| Live transcription | Text appears a few seconds after speech | Fake and real-Whisper tests on synthetic speech | Not yet |
+| Quiet and distant voices ([#4](https://github.com/nareshipme/Meetesh/issues/4)) | "Quiet and distant voices" in TESTING.md | WER bench on synthetic speech | Not yet |
+| Model download, pause, resume, retry | TESTING.md: Model downloads | Local test server | Not yet |
+| Model loading at startup, loading bar | TESTING.md: Model loading | Unit tests | Not yet |
+| GPU on Mac ([#3](https://github.com/nareshipme/Meetesh/issues/3)) | `gpu_probe` output, row says GPU | Metal build compiles in CI | **Failed** on at least one Mac (Decode Error -3); waiting for `gpu_probe` output |
+| GPU on Windows/Linux (Vulkan) | Row says GPU, hints faster | Software Vulkan device on Linux | Not yet |
+| Hints do not slow live text | "Live assist" last items in TESTING.md | Measured with both real models on a 4-core CPU | Not yet |
+| One-click recording | Ctrl/Cmd+N then Enter | Mock-backend UI checks | Not yet |
+| **System audio, Windows** | TESTING.md: System audio | Compiles in CI; synthetic two-track tests | Not yet |
+| **System audio, macOS** (permission prompt, ScreenCaptureKit) | TESTING.md: System audio | Compiles in CI | Not yet |
+| Silence gap keeps real time (loopback) | Play nothing for 30 s, then speech: timestamp near 0:30 | `GapFiller` unit tests | Not yet |
+| You / Others labels | Transcript shows both sides | Unit and UI mock tests | Not yet |
+| **Meeting notes** | TESTING.md: Meeting notes | Real Gemma on scripted dialogue (29 s short call, 222 s for 26 min on 4-core CPU) | Not yet |
+| **Auto titles** | TESTING.md: Automatic titles | Real Gemma title in 6.4 s | Not yet |
+| **Auto hints** (questions, pauses) | TESTING.md: Automatic hints | Detector unit tests; mock UI | Not yet. Thresholds are untuned guesses |
+| **Search** | TESTING.md: Search and export | 500 meetings / 200,000 lines: index 0.3 s, search 80 ms | Not yet |
+| **Markdown export** | Copy / Export Markdown | Unit tests | Not yet |
+| Packaged macOS build (macOS 13+, Info.plist microphone text) | Build a bundle and run it | Config only | Not yet |
+
+## Log
+
+Newest first. One line per report: date, who, what, result.
+
+- 2026-11-22: five features merged to `main` (#13 to #17). None of them has been run on real hardware yet.

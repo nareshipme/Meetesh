@@ -35,6 +35,7 @@ A piece of work (a slice, a feature, a notable fix) is not done until all of the
 2. **`TESTING.md` covers the change**, so someone can check it by hand.
 3. **Tests pass** (`cargo test --workspace`, `npm run build`) and new behavior has tests.
 4. **The pull request says what was not tested** (for example real hardware, or another OS).
+5. **[docs/VERIFICATION.md](docs/VERIFICATION.md) is updated** when a manual result is reported, and a new feature gets a row there (status "Not yet" until someone tries it).
 
 The pull request template repeats this as a checklist.
 
