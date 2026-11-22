@@ -5,6 +5,7 @@
 //! - `Assistant` is the backend-agnostic interface. The llama.cpp backend (`llm` feature) is one
 //!   implementation; a fake one drives the tests. Models are chosen by id from the manifest.
 
+pub mod gate;
 pub mod prompt;
 pub mod summary;
 pub mod title;
@@ -65,11 +66,15 @@ pub struct GenOptions {
     /// The longest any single pause may last, so a hint is slowed down during continuous speech
     /// but never starved.
     pub max_yield_ms: u64,
+    /// When this returns true the request stops at the next small step and reports `preempted`
+    /// (not `cancelled`): the caller will wait and run it again. Used by background jobs (notes)
+    /// so a hint, or a recording, can have the processor.
+    pub preempt: Option<Arc<dyn Fn() -> bool + Send + Sync>>,
 }
 
 impl GenOptions {
     pub fn hint(cancel: Arc<AtomicBool>) -> Self {
-        GenOptions { max_tokens: 96, temperature: 0.3, cancel, yield_to: None, max_yield_ms: 1_500 }
+        GenOptions { max_tokens: 96, temperature: 0.3, cancel, yield_to: None, max_yield_ms: 1_500, preempt: None }
     }
 
     /// Meeting notes: longer and steadier than a hint.
@@ -83,6 +88,17 @@ impl GenOptions {
         self
     }
 
+    /// Stop when asked: the user cancelled, or a more important job wants the processor.
+    pub fn should_stop(&self) -> bool {
+        self.cancel.load(Ordering::Relaxed) || self.preempt.as_ref().is_some_and(|f| f())
+    }
+
+    /// Run only when the processor is free of more important work.
+    pub fn preempted_by(mut self, f: Arc<dyn Fn() -> bool + Send + Sync>) -> Self {
+        self.preempt = Some(f);
+        self
+    }
+
     /// Pause while transcription work is pending (bounded by `max_yield_ms`, ended early by
     /// `cancel`). Returns how many milliseconds it waited.
     pub fn wait_while_busy(&self) -> u64 {
@@ -92,7 +108,7 @@ impl GenOptions {
         }
         let start = Instant::now();
         let limit = Duration::from_millis(self.max_yield_ms);
-        while pending.load(Ordering::Relaxed) > 0 && start.elapsed() < limit && !self.cancel.load(Ordering::Relaxed) {
+        while pending.load(Ordering::Relaxed) > 0 && start.elapsed() < limit && !self.should_stop() {
             std::thread::sleep(Duration::from_millis(10));
         }
         start.elapsed().as_millis() as u64
@@ -107,6 +123,9 @@ pub struct GenStats {
     pub first_token_ms: u64,
     pub total_ms: u64,
     pub cancelled: bool,
+    /// True when the request was stopped because a more important job wanted the processor (see
+    /// `GenOptions::preempt`). The text so far is incomplete; run the request again later.
+    pub preempted: bool,
     /// True when the model ran on the GPU (Metal, CUDA, ...), false when on the CPU.
     pub on_gpu: bool,
     /// True when the GPU failed and this request was transparently redone on the CPU.

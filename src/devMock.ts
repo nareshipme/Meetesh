@@ -164,28 +164,56 @@ export function installMock(variant: string) {
     return id;
   }
 
-  let summaryTimer: number | undefined;
-  let summaryFor: number | null = null;
-  function startSummarySim(id: number) {
-    summaryFor = id;
-    let step = 0;
-    const total = 3;
-    emit("summary-progress", { meeting_id: id, done: 0, total, finished: false, cancelled: false, error: null });
-    summaryTimer = window.setInterval(() => {
-      step++;
-      if (step < total) return void emit("summary-progress", { meeting_id: id, done: step, total, finished: false, cancelled: false, error: null });
-      clearInterval(summaryTimer);
-      summaryFor = null;
-      if (variant === "sumfail") return void emit("summary-progress", { meeting_id: id, done: 0, total, finished: true, cancelled: false, error: "The model did not return usable meeting notes. Try again." });
-      const m = find(id);
-      m.summary = SAMPLE_NOTES;
-      m.summary_model = "gemma-4-e2b-it";
-      if (m.title_source !== "user") {
-        m.title = "Onboarding launch date";
-        m.title_source = "model";
-      }
-      emit("summary-progress", { meeting_id: id, done: total, total, finished: true, cancelled: false, error: null });
-    }, 1200);
+  // Meeting notes: a line of jobs, written one at a time; paused (not cancelled) while a hint runs or a recording is going.
+  const notesLine: number[] = [];
+  let notesRunning: number | null = null;
+  let notesStep = 0;
+  let notesTimer: number | undefined;
+  const NOTES_STEPS = 3;
+  const evt = (id: number, state: string, extra: Record<string, unknown> = {}) =>
+    emit("summary-progress", { meeting_id: id, state, position: 0, paused_for: null, done: notesStep, total: NOTES_STEPS, finished: state === "finished", cancelled: false, error: null, ...extra });
+  const pausedFor = (): "hint" | "recording" | null => (hintBusy ? "hint" : recordingId !== null ? "recording" : null);
+  let lastPaused: string | null = null;
+  function pumpNotes() {
+    if (notesRunning === null) {
+      const next = notesLine.shift();
+      if (next === undefined) return;
+      notesRunning = next;
+      notesStep = 0;
+      lastPaused = null;
+      evt(next, "running");
+      notesTimer = window.setInterval(() => {
+        const why = pausedFor();
+        if (why !== lastPaused) {
+          lastPaused = why;
+          evt(notesRunning!, why ? "paused" : "running", { paused_for: why });
+        }
+        if (why) return; // waiting, not cancelled
+        notesStep++;
+        const id = notesRunning!;
+        if (notesStep < NOTES_STEPS) return void evt(id, "running");
+        clearInterval(notesTimer);
+        notesRunning = null;
+        if (variant === "sumfail") evt(id, "finished", { error: "The model did not return usable meeting notes. Try again." });
+        else {
+          const m = find(id);
+          m.summary = SAMPLE_NOTES;
+          m.summary_model = "gemma-4-e2b-it";
+          if (m.title_source !== "user") {
+            m.title = "Onboarding launch date";
+            m.title_source = "model";
+          }
+          evt(id, "finished", { done: NOTES_STEPS });
+        }
+        pumpNotes();
+      }, 1200);
+    }
+  }
+  function queueNotes(id: number) {
+    if (notesRunning === id || notesLine.includes(id)) throw "Notes for this meeting are already being written or waiting their turn";
+    notesLine.push(id);
+    evt(id, "queued", { position: notesLine.length - 1 + (notesRunning !== null ? 1 : 0) });
+    pumpNotes();
   }
 
   function stopRecordingSim() {
@@ -200,7 +228,7 @@ export function installMock(variant: string) {
     recordingId = null;
     emit("live-done", { meeting_id: id, full_pass_started: false });
     // Like the app: notes are written by themselves once the transcript is complete.
-    if (modelInstalled && assistInstalled) window.setTimeout(() => startSummarySim(id), 300);
+    if (modelInstalled && assistInstalled) window.setTimeout(() => queueNotes(id), 300);
     return m;
   }
 
@@ -252,7 +280,10 @@ export function installMock(variant: string) {
         case "list_meetings":
           return meetings.map((m) => ({ ...m })).sort((x, y) => y.id - x.id);
         case "create_meeting": {
-          const m = meeting(nextId++, `Meeting on ${new Date().toLocaleDateString("en-US", { weekday: "short", day: "numeric", month: "short" })}, ${new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`, 0);
+          const now = new Date();
+          const wd = now.toLocaleDateString("en-US", { weekday: "short" });
+          const mon = now.toLocaleDateString("en-US", { month: "short" });
+          const m = meeting(nextId++, `Meeting on ${wd} ${now.getDate()} ${mon}, ${now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`, 0);
           meetings.push(m);
           return m;
         }
@@ -302,17 +333,24 @@ export function installMock(variant: string) {
         case "export_markdown":
           return `/Users/me/Library/Application Support/app.meetesh.desktop/exports/${a.id}-meeting.md`;
         case "summarize_meeting":
-          startSummarySim(a.id);
+          queueNotes(a.id);
           return null;
-        case "cancel_summary":
-          if (summaryFor !== null) {
-            clearInterval(summaryTimer);
-            emit("summary-progress", { meeting_id: summaryFor, done: 0, total: 3, finished: true, cancelled: true, error: null });
-            summaryFor = null;
+        case "cancel_summary": {
+          if (notesRunning === a.id) {
+            clearInterval(notesTimer);
+            notesRunning = null;
+            emit("summary-progress", { meeting_id: a.id, state: "finished", position: 0, paused_for: null, done: 0, total: NOTES_STEPS, finished: true, cancelled: true, error: null });
+            pumpNotes();
+          } else if (notesLine.includes(a.id)) {
+            notesLine.splice(notesLine.indexOf(a.id), 1);
+            emit("summary-progress", { meeting_id: a.id, state: "finished", position: 0, paused_for: null, done: 0, total: NOTES_STEPS, finished: true, cancelled: true, error: null });
           }
           return null;
-        case "active_summary":
-          return summaryFor;
+        }
+        case "summary_status":
+          if (notesRunning === a.id) return { state: pausedFor() ? "paused" : "running", position: 0, paused_for: pausedFor() };
+          if (notesLine.includes(a.id)) return { state: "queued", position: notesLine.indexOf(a.id) + (notesRunning !== null ? 1 : 0), paused_for: null };
+          return { state: "idle", position: 0, paused_for: null };
         case "clear_summary":
           find(a.id).summary = "";
           find(a.id).summary_model = "";

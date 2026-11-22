@@ -109,11 +109,18 @@ pub struct HintDoneEvent {
     pub cpu_fallback: bool,
 }
 
-/// Progress of writing the meeting notes. The finished text is saved with the meeting; the UI
-/// reloads the meeting when `finished` is set.
+/// Where a meeting's notes are: waiting in line, being written, paused for something more
+/// important, or finished. The finished text is saved with the meeting; the UI reloads the meeting
+/// when `finished` is set.
 #[derive(Serialize, Clone)]
 pub struct SummaryEvent {
     pub meeting_id: i64,
+    /// "queued", "running", "paused" or "finished".
+    pub state: &'static str,
+    /// How many notes jobs are ahead of this one (queued only).
+    pub position: usize,
+    /// Why it is paused: "hint" (a hint is being written) or "recording".
+    pub paused_for: Option<&'static str>,
     pub done: usize,
     pub total: usize,
     pub finished: bool,

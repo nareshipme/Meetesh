@@ -272,10 +272,18 @@ impl LlamaAssistant {
             }
             injected()?;
             ctx.decode(&mut batch).map_err(decode_err)?;
-            if opts.cancel.load(Ordering::Relaxed) {
+            if opts.should_stop() {
                 return Ok(Completion {
                     text: String::new(),
-                    stats: GenStats { prompt_tokens: tokens.len(), total_ms: started.elapsed().as_millis() as u64, cancelled: true, on_gpu: gpu, yielded_ms, ..Default::default() },
+                    stats: GenStats {
+                        prompt_tokens: tokens.len(),
+                        total_ms: started.elapsed().as_millis() as u64,
+                        cancelled: true,
+                        preempted: !opts.cancel.load(Ordering::Relaxed),
+                        on_gpu: gpu,
+                        yielded_ms,
+                        ..Default::default()
+                    },
                 });
             }
         }
@@ -298,8 +306,9 @@ impl LlamaAssistant {
         let mut logits_idx = batch.n_tokens() - 1;
 
         while stats.generated_tokens < opts.max_tokens {
-            if opts.cancel.load(Ordering::Relaxed) {
+            if opts.should_stop() {
                 stats.cancelled = true;
+                stats.preempted = !opts.cancel.load(Ordering::Relaxed);
                 break;
             }
             let tok = sampler.sample(&ctx, logits_idx);

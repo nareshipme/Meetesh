@@ -41,8 +41,11 @@ pub fn start_hint(app: &AppHandle, meeting_id: i64, trigger: Option<Trigger>) ->
         *job = Some(HintJob { meeting_id, cancel: cancel.clone() });
     }
     let hint_id = NEXT_HINT_ID.fetch_add(1, Ordering::Relaxed);
+    // Someone is waiting for this: background work (meeting notes) steps aside until it is done.
+    let interactive = st.gate.begin_interactive();
 
     std::thread::spawn(move || {
+        let _interactive = interactive;
         let st = app.state::<AppState>();
         let outcome = (|| -> Result<meetesh_core::assist::Completion> {
             let assistant = get_assistant(&app)?; // first use loads the model (a few seconds)

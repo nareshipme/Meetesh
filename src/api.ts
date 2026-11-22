@@ -129,8 +129,21 @@ export interface LiveDoneEvent {
   full_pass_started: boolean;
 }
 
+export type NotesState = "idle" | "queued" | "running" | "paused";
+
+export interface SummaryStatus {
+  state: NotesState;
+  /** Notes jobs ahead of this one (queued only). */
+  position: number;
+  /** Why it waits: a hint is being written, or you are recording. */
+  paused_for: "hint" | "recording" | null;
+}
+
 export interface SummaryEvent {
   meeting_id: number;
+  state: "queued" | "running" | "paused" | "finished";
+  position: number;
+  paused_for: "hint" | "recording" | null;
   done: number;
   total: number;
   /** The run ended (written, cancelled or failed); reload the meeting. */
@@ -216,8 +229,9 @@ export const api = {
   onHintPiece: (cb: (e: HintPieceEvent) => void) => listen<HintPieceEvent>("hint-piece", (e) => cb(e.payload)),
   onHintDone: (cb: (e: HintDoneEvent) => void) => listen<HintDoneEvent>("hint-done", (e) => cb(e.payload)),
   summarizeMeeting: (id: number) => invoke<void>("summarize_meeting", { id }),
-  cancelSummary: () => invoke<void>("cancel_summary"),
-  activeSummary: () => invoke<number | null>("active_summary"),
+  /** Stop this meeting's notes, or take them out of the line. */
+  cancelSummary: (id: number) => invoke<void>("cancel_summary", { id }),
+  summaryStatus: (id: number) => invoke<SummaryStatus>("summary_status", { id }),
   clearSummary: (id: number) => invoke<Meeting>("clear_summary", { id }),
   onSummary: (cb: (e: SummaryEvent) => void) => listen<SummaryEvent>("summary-progress", (e) => cb(e.payload)),
   onLevel: (cb: (level: number) => void) => listen<number>("recording-level", (e) => cb(e.payload)),

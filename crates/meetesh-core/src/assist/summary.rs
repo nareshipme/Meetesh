@@ -10,6 +10,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::Arc;
 
 use crate::assist::prompt::{has_others, strip_thinking, transcript_lines, truncate_chars, SPEAKER_NOTE};
+use crate::assist::gate::{ModelGate, PauseReason};
 use crate::assist::{Assistant, ChatMessage, ChatRole, GenOptions};
 use crate::{Error, Result, TranscriptSegment};
 
@@ -223,24 +224,57 @@ pub struct SummaryRun {
     pub cancel: Arc<AtomicBool>,
     /// Pause between small steps while live transcription has work (see `GenOptions`).
     pub yield_to: Option<Arc<AtomicUsize>>,
+    /// Background rules: wait (not cancel) while a hint is written, or, if `cpu_bound`, while a
+    /// recording runs. `None` runs without ever waiting.
+    pub gate: Option<Arc<ModelGate>>,
+    /// The notes model runs on the processor (not a GPU), so it competes with live transcription.
+    pub cpu_bound: bool,
+    /// Told when the run starts waiting (`Some(why)`) and when it carries on (`None`).
+    pub on_pause: Option<Arc<dyn Fn(Option<PauseReason>) + Send + Sync>>,
 }
 
 impl SummaryRun {
+    /// A run with no gate and no waiting (tests, command line tools).
+    pub fn plain(cancel: Arc<AtomicBool>) -> Self {
+        SummaryRun { cancel, yield_to: None, gate: None, cpu_bound: false, on_pause: None }
+    }
+
     fn opts(&self, max_tokens: usize) -> GenOptions {
-        let o = GenOptions::notes(self.cancel.clone(), max_tokens);
-        match &self.yield_to {
-            Some(p) => o.yielding_to(p.clone()),
-            None => o,
+        let mut o = GenOptions::notes(self.cancel.clone(), max_tokens);
+        if let Some(p) = &self.yield_to {
+            o = o.yielding_to(p.clone());
         }
+        if let Some(g) = &self.gate {
+            o = o.preempted_by(g.preempt_check(self.cpu_bound));
+        }
+        o
     }
 }
 
-fn ask(a: &dyn Assistant, run: &SummaryRun, messages: &[ChatMessage], max_tokens: usize) -> Result<String> {
-    let c = a.complete(messages, &run.opts(max_tokens), &mut |_| true)?;
-    if c.stats.cancelled {
-        return Err(Error::Cancelled);
+/// One model request of the run. If a hint (or a recording) takes the processor part-way through,
+/// the request stops, waits, and is run again from its start; the run as a whole is never cancelled
+/// by that, only by the user.
+pub(crate) fn ask(a: &dyn Assistant, run: &SummaryRun, messages: &[ChatMessage], max_tokens: usize) -> Result<String> {
+    loop {
+        if let Some(g) = &run.gate {
+            let notify = |r: Option<PauseReason>| {
+                if let Some(f) = &run.on_pause {
+                    f(r)
+                }
+            };
+            if !g.wait_for_turn(run.cpu_bound, &run.cancel, notify) {
+                return Err(Error::Cancelled);
+            }
+        }
+        let c = a.complete(messages, &run.opts(max_tokens), &mut |_| true)?;
+        if c.stats.preempted {
+            continue; // stopped to make room; wait for the way to clear and redo this request
+        }
+        if c.stats.cancelled {
+            return Err(Error::Cancelled);
+        }
+        return Ok(strip_thinking(&c.text).trim().to_string());
     }
-    Ok(strip_thinking(&c.text).trim().to_string())
 }
 
 /// Summarize a meeting. `on_progress(done, total)` is called after every step (`total` is
@@ -355,7 +389,7 @@ mod tests {
     const GOOD: &str = "SUMMARY: The team agreed to ship on Friday.\nDECISIONS:\n- Ship on Friday\nACTION ITEMS:\n- Sam writes the release notes by Thursday";
 
     fn run() -> SummaryRun {
-        SummaryRun { cancel: Arc::new(AtomicBool::new(false)), yield_to: None }
+        SummaryRun::plain(Arc::new(AtomicBool::new(false)))
     }
 
     fn seg(ms: i64, text: &str) -> TranscriptSegment {
@@ -496,5 +530,119 @@ mod tests {
         let blank = Fake::new(|_| "   ".to_string());
         assert!(summarize(&blank, &[seg(0, "Hi")], "", &run(), |_, _| {}).is_err());
         assert_eq!(fake.calls().len(), 0, "nothing is sent to the model for an empty transcript");
+    }
+
+    /// A fake model whose requests honour `GenOptions::preempt` like the real one: while the check says
+    /// stop, a request returns at once, marked preempted, with no text.
+    struct Polite {
+        inner: Fake,
+        preempted_calls: Mutex<usize>,
+    }
+    impl Assistant for Polite {
+        fn model_id(&self) -> &str {
+            "polite"
+        }
+        fn complete(&self, m: &[ChatMessage], o: &GenOptions, p: &mut dyn FnMut(&str) -> bool) -> Result<Completion> {
+            if o.should_stop() {
+                *self.preempted_calls.lock().unwrap() += 1;
+                return Ok(Completion { text: String::new(), stats: GenStats { cancelled: true, preempted: !o.cancel.load(Ordering::Relaxed), ..Default::default() } });
+            }
+            self.inner.complete(m, o, p)
+        }
+    }
+
+    fn gated(gate: &Arc<ModelGate>, cpu_bound: bool, events: Arc<Mutex<Vec<Option<PauseReason>>>>) -> SummaryRun {
+        SummaryRun {
+            cancel: Arc::new(AtomicBool::new(false)),
+            yield_to: None,
+            gate: Some(gate.clone()),
+            cpu_bound,
+            on_pause: Some(Arc::new(move |r| events.lock().unwrap().push(r))),
+        }
+    }
+
+    #[test]
+    fn notes_wait_for_a_hint_and_then_finish_instead_of_being_cancelled() {
+        let gate = ModelGate::new();
+        let events = Arc::new(Mutex::new(vec![]));
+        let hint = gate.begin_interactive(); // a hint is being written when the notes start
+        let model = Arc::new(Polite { inner: Fake::new(|_| GOOD.to_string()), preempted_calls: Mutex::new(0) });
+        let run = gated(&gate, false, events.clone());
+        let m2 = model.clone();
+        let t = std::thread::spawn(move || summarize(m2.as_ref(), &[seg(0, "Can we ship Friday?")], "", &run, |_, _| {}));
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        assert!(!t.is_finished(), "waiting while the hint runs");
+        assert_eq!(model.inner.calls().len(), 0, "no model request was made yet");
+        drop(hint);
+        let s = t.join().unwrap().unwrap();
+        assert_eq!(s.decisions, ["Ship on Friday"], "the notes complete once the hint is done");
+        assert_eq!(*events.lock().unwrap(), vec![Some(PauseReason::Hint), None], "the UI hears about the pause and the resume");
+    }
+
+    /// Stops its first request as if a hint had just taken the processor, then behaves.
+    struct StopsOnce {
+        inner: Fake,
+        stopped: Mutex<bool>,
+    }
+    impl Assistant for StopsOnce {
+        fn model_id(&self) -> &str {
+            "stops-once"
+        }
+        fn complete(&self, m: &[ChatMessage], o: &GenOptions, p: &mut dyn FnMut(&str) -> bool) -> Result<Completion> {
+            let mut done = self.stopped.lock().unwrap();
+            if !*done {
+                *done = true;
+                return Ok(Completion { text: "half a sent".into(), stats: GenStats { cancelled: true, preempted: true, ..Default::default() } });
+            }
+            drop(done);
+            self.inner.complete(m, o, p)
+        }
+    }
+
+    #[test]
+    fn a_request_stopped_halfway_by_a_hint_is_redone_not_lost() {
+        let model = StopsOnce { inner: Fake::new(|_| GOOD.to_string()), stopped: Mutex::new(false) };
+        let gate = ModelGate::new();
+        let s = summarize(&model, &[seg(0, "Can we ship Friday?")], "", &gated(&gate, false, Arc::new(Mutex::new(vec![]))), |_, _| {}).unwrap();
+        assert_eq!(s.decisions, ["Ship on Friday"], "the partial text was thrown away and the request run again");
+        assert_eq!(model.inner.calls().len(), 1, "exactly one complete request reached the end");
+        // Without the stop being the user's, nothing reports a cancel.
+        let user_cancel = StopsOnce { inner: Fake::new(|_| GOOD.to_string()), stopped: Mutex::new(true) };
+        let run = SummaryRun::plain(Arc::new(AtomicBool::new(true)));
+        assert!(matches!(summarize(&user_cancel, &[seg(0, "Hi there")], "", &run, |_, _| {}), Err(Error::Cancelled)));
+    }
+
+    #[test]
+    fn a_recording_pauses_notes_only_on_a_processor_bound_model() {
+        let gate = ModelGate::new();
+        gate.set_recording(true);
+        // GPU notes model: runs straight through the recording.
+        let events = Arc::new(Mutex::new(vec![]));
+        let model = Polite { inner: Fake::new(|_| GOOD.to_string()), preempted_calls: Mutex::new(0) };
+        let r = summarize(&model, &[seg(0, "Hello there everyone")], "", &gated(&gate, false, events.clone()), |_, _| {});
+        assert!(r.is_ok());
+        assert!(events.lock().unwrap().is_empty(), "a GPU model never waits for a recording");
+        // CPU notes model: waits until the recording stops.
+        let events = Arc::new(Mutex::new(vec![]));
+        let run = gated(&gate, true, events.clone());
+        let g2 = gate.clone();
+        let t = std::thread::spawn(move || summarize(&Polite { inner: Fake::new(|_| GOOD.to_string()), preempted_calls: Mutex::new(0) }, &[seg(0, "Hello there everyone")], "", &run, |_, _| {}));
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        assert!(!t.is_finished(), "paused while recording");
+        g2.set_recording(false);
+        assert!(t.join().unwrap().is_ok(), "resumes by itself after the recording");
+        assert_eq!(*events.lock().unwrap(), vec![Some(PauseReason::Recording), None]);
+    }
+
+    #[test]
+    fn cancelling_while_paused_ends_the_run_promptly() {
+        let gate = ModelGate::new();
+        let _hint = gate.begin_interactive();
+        let run = gated(&gate, false, Arc::new(Mutex::new(vec![])));
+        let cancel = run.cancel.clone();
+        let t = std::thread::spawn(move || summarize(&Fake::new(|_| GOOD.to_string()), &[seg(0, "Hello there")], "", &run, |_, _| {}));
+        std::thread::sleep(std::time::Duration::from_millis(80));
+        cancel.store(true, Ordering::Relaxed);
+        assert!(matches!(t.join().unwrap(), Err(Error::Cancelled)));
     }
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, Meeting } from "../api";
+import { api, Meeting, SummaryStatus } from "../api";
 import type { Notify } from "../hooks/useToasts";
 import { errorText } from "../lib/format";
 
@@ -33,17 +33,24 @@ function Notes({ text }: { text: string }) {
 
 /** Meeting notes (summary, decisions, action items) written by the on-device model after a meeting. */
 export default function SummaryPanel({ meeting, assistReady, notify, onChange, onOpenSettings }: Props) {
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  // null: nothing is being written for this meeting. Otherwise where the notes are in the background job.
+  const [progress, setProgress] = useState<(SummaryStatus & { done: number; total: number }) | null>(null);
 
   useEffect(() => {
     setProgress(null);
-    api.activeSummary().then((id) => id === meeting.id && setProgress({ done: 0, total: 1 })).catch(() => {});
+    api
+      .summaryStatus(meeting.id)
+      .then((s) => s.state !== "idle" && setProgress({ ...s, done: 0, total: 1 }))
+      .catch(() => {});
     const un = api.onSummary((e) => {
       if (e.meeting_id !== meeting.id) return;
-      if (!e.finished) return setProgress({ done: e.done, total: e.total });
-      setProgress(null);
-      if (e.error) notify("error", e.error);
-      onChange();
+      if (e.state === "finished") {
+        setProgress(null);
+        if (e.error) notify("error", e.error);
+        onChange();
+        return;
+      }
+      setProgress({ state: e.state, position: e.position, paused_for: e.paused_for, done: e.done, total: e.total });
     });
     return () => {
       un.then((f) => f());
@@ -53,9 +60,9 @@ export default function SummaryPanel({ meeting, assistReady, notify, onChange, o
   const hasTranscript = meeting.transcript_model !== "";
 
   async function run() {
-    setProgress({ done: 0, total: 1 });
+    setProgress({ state: "queued", position: 0, paused_for: null, done: 0, total: 1 });
     try {
-      await api.summarizeMeeting(meeting.id);
+      await api.summarizeMeeting(meeting.id); // joins the line; progress comes as events
     } catch (e) {
       setProgress(null);
       notify("error", errorText(e));
@@ -81,14 +88,24 @@ export default function SummaryPanel({ meeting, assistReady, notify, onChange, o
   }
 
   if (progress) {
+    const waiting = progress.state === "queued";
+    const paused = progress.state === "paused";
     return (
       <section className="notes">
         <div className="row progress-row">
-          <progress value={progress.done} max={Math.max(progress.total, 1)} aria-label="Writing notes" />
+          {waiting ? <progress aria-label="Waiting for its turn" /> : <progress value={progress.done} max={Math.max(progress.total, 1)} aria-label="Writing notes" />}
           <span className="muted">
-            Writing notes… {progress.total > 1 ? `step ${Math.min(progress.done + 1, progress.total)} of ${progress.total}` : ""}
+            {waiting
+              ? progress.position > 0
+                ? `Waiting for its turn: ${progress.position} ahead of this one. It starts by itself.`
+                : "Starting…"
+              : paused
+                ? progress.paused_for === "recording"
+                  ? "Paused while you record, so live transcription keeps up. It carries on by itself afterwards."
+                  : "Paused while a hint is written. It carries on by itself."
+                : `Writing notes… ${progress.total > 1 ? `step ${Math.min(progress.done + 1, progress.total)} of ${progress.total}` : ""}`}
           </span>
-          <button className="btn btn-sm" onClick={() => api.cancelSummary()}>
+          <button className="btn btn-sm" onClick={() => api.cancelSummary(meeting.id)}>
             Cancel
           </button>
         </div>
