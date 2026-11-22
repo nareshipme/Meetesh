@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api } from "../api";
+import { api, HintTrigger } from "../api";
 import { errorText } from "../lib/format";
 import type { Notify } from "./useToasts";
 
 export type HintState =
   | { kind: "idle" }
-  | { kind: "working"; text: string } // text streams in as the model writes it
-  | { kind: "done"; text: string; ms: number; backend: "GPU" | "CPU"; fellBack: boolean }
+  | { kind: "working"; text: string; trigger: HintTrigger } // text streams in as the model writes it
+  | { kind: "done"; text: string; ms: number; backend: "GPU" | "CPU"; fellBack: boolean; trigger: HintTrigger }
   | { kind: "none" } // the model had nothing useful to say
   | { kind: "error"; message: string };
 
@@ -20,20 +20,26 @@ export function useHint(meetingId: number, notify: Notify) {
     currentId.current = null;
     api
       .activeHint()
-      .then((id) => id === meetingId && setState({ kind: "working", text: "" }))
+      .then((id) => id === meetingId && setState({ kind: "working", text: "", trigger: null }))
       .catch(() => {});
 
     const unPiece = api.onHintPiece((e) => {
       if (e.meeting_id !== meetingId) return;
       currentId.current = e.hint_id;
-      setState({ kind: "working", text: e.text });
+      setState({ kind: "working", text: e.text, trigger: e.trigger });
     });
     const unDone = api.onHintDone((e) => {
       if (e.meeting_id !== meetingId) return;
       currentId.current = null;
-      if (e.error) setState({ kind: "error", message: e.error });
+      if (e.trigger) {
+        // A hint the app offered by itself: show it if there is one, and stay quiet otherwise
+        // (no "nothing to suggest", no errors the user did not ask for).
+        if (e.text && !e.error && !e.cancelled)
+          setState({ kind: "done", text: e.text, ms: e.total_ms, backend: e.on_gpu ? "GPU" : "CPU", fellBack: e.cpu_fallback, trigger: e.trigger });
+        else setState({ kind: "idle" });
+      } else if (e.error) setState({ kind: "error", message: e.error });
       else if (e.cancelled) setState({ kind: "idle" });
-      else if (e.text) setState({ kind: "done", text: e.text, ms: e.total_ms, backend: e.on_gpu ? "GPU" : "CPU", fellBack: e.cpu_fallback });
+      else if (e.text) setState({ kind: "done", text: e.text, ms: e.total_ms, backend: e.on_gpu ? "GPU" : "CPU", fellBack: e.cpu_fallback, trigger: null });
       else setState({ kind: "none" });
     });
     return () => {
@@ -43,7 +49,7 @@ export function useHint(meetingId: number, notify: Notify) {
   }, [meetingId]);
 
   const request = useCallback(async () => {
-    setState({ kind: "working", text: "" });
+    setState({ kind: "working", text: "", trigger: null });
     try {
       await api.requestHint(meetingId);
     } catch (e) {

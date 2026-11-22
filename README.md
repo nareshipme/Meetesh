@@ -53,6 +53,7 @@ These show the interface running against the built-in sample-data backend (see [
 | GPU for live assist: Metal on macOS, opt-in Vulkan on Windows and Linux (see [GPU acceleration](#gpu-acceleration)) | Metal compiles in CI but is failing on at least one Mac ([#3](https://github.com/nareshipme/Meetesh/issues/3)); Vulkan verified with a software Vulkan device only |
 | `gpu_probe` tool that tries the known GPU workarounds and reports which one works | Working (Linux verified) |
 | Hints never slow down live transcription: while the transcriber has work pending, hint generation pauses (in small steps, bounded so a hint is never starved). Measured with both real models on a 4-core CPU: live text arrived over 30 s late on average (up to 50 s) while hints ran before, and 2.6 s late now, about the same as with no hints (2.3 s) | Working |
+| **Automatic hints (opt-in)**: the "Auto hints" menu above the transcript (off by default, remembered). *On questions*: when the other participants ask something (needs system audio, which is what tells their voice from yours) and you have not started answering within 1.5 s. *Questions and pauses*: also after 12 s of quiet following a stretch of talk (at least 30 words), which works with a microphone alone. At most one automatic hint per 45 s; a hint that finds nothing useful stays silent, and it is labelled "after a question" or "during a pause" | Rules unit-tested, wiring only exercised against the mock backend; **not yet tried on a real call** |
 | Optional meeting goals that keep hints on topic | Working |
 | One-click recording: **New recording** (Ctrl/Cmd+N) opens the consent notice straight away, so starting is one click plus Enter. The consent reminder is still shown before every recording. The microphone is chosen in the same step and remembered | Working |
 | **System audio: the other participants.** Tick "Also record the other participants" in the consent step and what the computer plays (a call in Zoom, Meet, Teams, a browser) is recorded as a second track, transcribed live next to your microphone, and shown as **You** / **Others**. Hints see who said what. Windows: WASAPI loopback of the default speakers. macOS 13+: ScreenCaptureKit (asks for the Screen & System Audio Recording permission). Linux: not yet. If the second track cannot start, the microphone recording carries on and you are told | Implemented and compiled for Windows and macOS in this environment, tested with synthetic audio; **not yet run on real Windows or macOS hardware** (see [TESTING.md](TESTING.md#system-audio-the-other-participants)) |
@@ -65,7 +66,7 @@ These show the interface running against the built-in sample-data backend (see [
 
 | | Planned |
 |---|---|
-| Next | **Automatic hint triggers** (a question is asked, a long pause), a global hotkey, and a hint overlay that floats over other apps |
+| Next | A global hotkey and a hint overlay that floats over other apps (so a hint is visible while another app is in front) |
 | Then | Search, Markdown export (a Claude-with-your-own-key option for summaries is an idea, not a plan) |
 | Then | System audio on Linux (PipeWire/PulseAudio monitor), and capturing one app or window instead of everything |
 | Then | Settings and onboarding, signed installers and auto-update |
@@ -83,7 +84,7 @@ Tracked as GitHub issues:
 
 ## Limitations
 
-- Hints are requested manually for now.
+- Automatic hints only show inside the Meetesh window for now (no overlay or notification over other apps yet). A question is recognised from its wording ("?" or an opening like "Can you…"), so a rhetorical question counts and a question Whisper did not punctuate may be missed. With a microphone alone, questions cannot be told from your own speech, so only the pause trigger applies.
 - The live-assist model is a 3.1 GB download and, once downloaded, is loaded into memory at every start (about 4 GB). A per-user switch to load it only on demand is planned.
 - Models may run on the CPU even when a GPU is present ([#3](https://github.com/nareshipme/Meetesh/issues/3)). Speech recognition (Whisper) always runs on the CPU. On a CPU-only 4-core Linux machine a hint takes about 6 s.
 - Meeting notes need the live-assist model (the same 3.1 GB download). On a CPU-only 4-core machine each step of about 2,000 tokens of transcript took 20 to 85 s in our runs, so a one-hour meeting can take around ten minutes (it runs in the background and can be cancelled; a GPU is much faster). Notes can mishear or omit things, like the transcript they come from.

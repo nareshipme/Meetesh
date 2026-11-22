@@ -86,6 +86,16 @@ MEETESH_TEST_MODEL=/path/to/ggml-tiny.en.bin \
 - [ ] Ask for a hint repeatedly while you keep talking (live transcription running). The live text must keep up with your speech: it should stay a few seconds behind at most while hints are being generated. A hint may take a little longer to appear while you talk; that is expected, because it lets transcription go first. If live text still lags or the log says chunks were dropped, report it with your Mac model and whether the row says GPU or CPU.
 - [ ] Please report the time shown on a hint, your chip, macOS version, and memory use in Activity Monitor.
 
+**Automatic hints** (needs the live-assist model; for questions also system audio, see above)
+- [ ] The menu "Auto hints" above the transcript is off by default. Choose "on questions", restart the app: the choice is remembered.
+- [ ] Record a call with the other participants captured. When someone asks you a question (say it from a video or a colleague), about 2 s after they finish, a hint appears labelled "after a question". If you start answering right away, no hint appears.
+- [ ] Questions you ask yourself (into the microphone) do not trigger a hint.
+- [ ] Two questions in a row within 45 s give one hint, the second is offered after the cooldown.
+- [ ] Choose "questions and pauses": after you talk for a while and then everyone is quiet for about 12 s, a hint labelled "during a pause" appears, once.
+- [ ] With "off" nothing ever appears by itself. With a hint panel already open you can still dismiss it (×); an automatic hint that finds nothing to say never shows "Nothing useful to suggest".
+- [ ] While an automatic hint is being written, live text keeps up (see "Live assist" above).
+- [ ] Note any hint that came at a bad moment, or a question that was missed, with what was said.
+
 **Meeting notes** (needs the live-assist model)
 - [ ] Record a short meeting with at least a couple of sentences of real content (decisions and who-does-what make it easier to judge), then **Stop**. After the live transcript settles, a "Notes" section shows "Writing notes…" with a progress bar by itself, then a summary, decisions and action items.
 - [ ] The notes are faithful: nothing invented (names, dates, numbers), decisions and action items match what was said. Note anything wrong or missing, with how long the meeting was and how long the notes took (the log has `summary for meeting N: … ms`).

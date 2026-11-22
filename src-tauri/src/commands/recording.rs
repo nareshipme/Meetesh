@@ -109,6 +109,7 @@ pub fn start_recording(
         meeting
     };
 
+    state.auto_hints.begin(&app, meeting.id, system.is_some());
     log::info!("recording started for meeting {} (system audio: {})", meeting.id, system.is_some());
     *active = Some(ActiveRecording { meeting_id: meeting.id, session, capture, system, live });
     Ok(StartedRecording { meeting, system_audio_error })
@@ -153,6 +154,7 @@ pub fn stop_recording(app: AppHandle, state: State<AppState>) -> Result<Meeting>
         .unwrap()
         .take()
         .ok_or_else(|| Error::Other("No recording in progress".into()))?;
+    state.auto_hints.end();
     rec.capture.stop(); // stop the capture first, then drain the pipeline
     let report = rec.session.stop();
     if let Some(system) = rec.system {

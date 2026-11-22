@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, Meeting, ModelLoadEvent, TranscriptSegment } from "../api";
+import { api, AutoHintMode, Meeting, ModelLoadEvent, TranscriptSegment } from "../api";
 import type { Notify } from "../hooks/useToasts";
 import { useHint } from "../hooks/useHint";
 import { errorText, fmtDuration } from "../lib/format";
@@ -21,6 +21,20 @@ export default function Transcript({ meeting, modelReady, assistReady, assistLoa
   const bodyRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   const hint = useHint(meeting.id, notify);
+  const [autoMode, setAutoMode] = useState<AutoHintMode>("off");
+  useEffect(() => {
+    api.getAutoHints().then(setAutoMode).catch(() => {});
+  }, []);
+  async function chooseAutoMode(mode: AutoHintMode) {
+    const before = autoMode;
+    setAutoMode(mode);
+    try {
+      await api.setAutoHints(mode);
+    } catch (e) {
+      setAutoMode(before);
+      notify("error", errorText(e));
+    }
+  }
   const assistLoading = assistLoad?.state === "loading" || assistLoad?.state === "warming";
   const canHint = assistReady && !assistLoading && segments.length > 0 && hint.state.kind !== "working";
 
@@ -115,6 +129,24 @@ export default function Transcript({ meeting, modelReady, assistReady, assistLoa
           {recording && modelReady && <span className="live-badge">Live</span>}
         </h2>
         <div className="row">
+          {(
+            <select
+              className="auto-hints"
+              aria-label="Automatic hints"
+              value={autoMode}
+              disabled={!assistReady}
+              onChange={(e) => chooseAutoMode(e.target.value as AutoHintMode)}
+              title={
+                assistReady
+                  ? "Offer a hint by itself. Questions are noticed when the other participants are recorded (system audio); pauses work with a microphone alone."
+                  : "Download the live assist model first (sidebar)"
+              }
+            >
+              <option value="off">Auto hints: off</option>
+              <option value="questions">Auto hints: on questions</option>
+              <option value="questions_and_pauses">Auto hints: questions and pauses</option>
+            </select>
+          )}
           <button
             className="btn btn-sm btn-hint"
             onClick={hint.request}

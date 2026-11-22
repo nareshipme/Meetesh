@@ -8,6 +8,7 @@
 pub mod prompt;
 pub mod summary;
 pub mod title;
+pub mod trigger;
 #[cfg(feature = "llm")]
 pub mod jinja;
 #[cfg(feature = "llm")]

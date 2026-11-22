@@ -2,6 +2,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use meetesh_core::assist::prompt::{build_hint_messages, clean_hint, recent_window, Budget, HintContext};
+use meetesh_core::assist::trigger::{AutoHintMode, Trigger};
 use meetesh_core::assist::{Assistant, GenOptions};
 use meetesh_core::{Error, Result};
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -18,6 +19,13 @@ static NEXT_HINT_ID: AtomicU64 = AtomicU64::new(1);
 /// Returns immediately with a hint id; text streams via `hint-piece`, then `hint-done`.
 #[tauri::command]
 pub fn request_hint(app: AppHandle, meeting_id: i64) -> Result<u64> {
+    start_hint(&app, meeting_id, None)
+}
+
+/// Start a hint. `trigger` is set when the app offers it by itself (see `auto_hints`).
+pub fn start_hint(app: &AppHandle, meeting_id: i64, trigger: Option<Trigger>) -> Result<u64> {
+    let trigger = trigger.map(Trigger::as_str);
+    let app = app.clone();
     let st = app.state::<AppState>();
     let entry = st.assist_model()?.clone();
     if !st.models.is_installed(&entry) {
@@ -49,7 +57,7 @@ pub fn request_hint(app: AppHandle, meeting_id: i64) -> Result<u64> {
             let opts = GenOptions::hint(cancel.clone()).yielding_to(st.asr_pending.clone());
             assistant.complete(&messages, &opts, &mut |piece| {
                 so_far.push_str(piece);
-                let _ = app.emit(HINT_PIECE, HintPieceEvent { meeting_id, hint_id, text: so_far.clone() });
+                let _ = app.emit(HINT_PIECE, HintPieceEvent { trigger, meeting_id, hint_id, text: so_far.clone() });
                 true
             })
         })();
@@ -72,6 +80,7 @@ pub fn request_hint(app: AppHandle, meeting_id: i64) -> Result<u64> {
                     log::warn!("GPU failure reason: {reason}");
                 }
                 HintDoneEvent {
+                    trigger,
                     meeting_id,
                     hint_id,
                     text: if c.stats.cancelled { None } else { clean_hint(&c.text) },
@@ -86,7 +95,7 @@ pub fn request_hint(app: AppHandle, meeting_id: i64) -> Result<u64> {
             }
             Err(e) => {
                 log::warn!("hint failed: {e}");
-                HintDoneEvent { meeting_id, hint_id, text: None, cancelled: false, error: Some(e.to_string()), first_token_ms: 0, total_ms: 0, tokens: 0, on_gpu: false, cpu_fallback: false }
+                HintDoneEvent { trigger, meeting_id, hint_id, text: None, cancelled: false, error: Some(e.to_string()), first_token_ms: 0, total_ms: 0, tokens: 0, on_gpu: false, cpu_fallback: false }
             }
         };
         let _ = app.emit(HINT_DONE, done);
@@ -112,3 +121,19 @@ pub fn assist_ready(state: State<AppState>) -> bool {
 pub fn active_hint(state: State<AppState>) -> Option<i64> {
     state.hint_job.lock().unwrap().as_ref().map(|j| j.meeting_id)
 }
+
+/// How the app offers hints by itself: "off", "questions" or "questions_and_pauses".
+#[tauri::command]
+pub fn get_auto_hints(state: State<AppState>) -> String {
+    state.auto_hints.mode().as_str().to_string()
+}
+
+#[tauri::command]
+pub fn set_auto_hints(state: State<AppState>, mode: String) -> Result<()> {
+    let mode = AutoHintMode::parse(&mode);
+    state.db.lock().unwrap().set_setting(AUTO_HINTS_KEY, mode.as_str())?;
+    state.auto_hints.set_mode(mode);
+    Ok(())
+}
+
+pub const AUTO_HINTS_KEY: &str = "auto_hints";

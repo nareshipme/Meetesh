@@ -112,7 +112,12 @@ export interface SummaryEvent {
   error: string | null;
 }
 
+/** Why a hint was offered without being asked; null for a hint the user requested. */
+export type HintTrigger = "question" | "pause" | null;
+export type AutoHintMode = "off" | "questions" | "questions_and_pauses";
+
 export interface HintPieceEvent {
+  trigger: HintTrigger;
   meeting_id: number;
   hint_id: number;
   /** Everything generated so far (raw). */
@@ -120,6 +125,7 @@ export interface HintPieceEvent {
 }
 
 export interface HintDoneEvent {
+  trigger: HintTrigger;
   meeting_id: number;
   hint_id: number;
   /** Cleaned hint; null when the model had nothing useful to say. */
@@ -170,6 +176,8 @@ export const api = {
   setAgenda: (id: number, agenda: string) => invoke<Meeting>("set_agenda", { id, agenda }),
   requestHint: (meetingId: number) => invoke<number>("request_hint", { meetingId }),
   cancelHint: () => invoke<void>("cancel_hint"),
+  getAutoHints: () => invoke<AutoHintMode>("get_auto_hints"),
+  setAutoHints: (mode: AutoHintMode) => invoke<void>("set_auto_hints", { mode }),
   assistReady: () => invoke<boolean>("assist_ready"),
   activeHint: () => invoke<number | null>("active_hint"),
   onHintPiece: (cb: (e: HintPieceEvent) => void) => listen<HintPieceEvent>("hint-piece", (e) => cb(e.payload)),
