@@ -127,10 +127,10 @@ MEETESH_TEST_MODEL=/path/to/ggml-tiny.en.bin \
 - [ ] A call recorded with system audio: the notes can tell who said what ("you" versus the others).
 
 **Automatic titles** (needs the live-assist model)
-- [ ] Record a meeting without renaming it. When the notes appear, the title changes from "Meeting <date>" to a short title about what was said (also in the sidebar). Hovering the title says it was written by the model.
+- [ ] Record a meeting without renaming it. When the notes appear, the title changes from "Meeting on Sun 22 Nov, 3:45 PM" (the date and time you recorded) to a short title about what was said (also in the sidebar). Hovering the title says it was written by the model.
 - [ ] Rename a meeting yourself, then **Regenerate** the notes: your title stays.
 - [ ] Start typing a title while the notes are still being written: your text is not replaced when they finish.
-- [ ] Upgrade from an older version with meetings you had renamed: their titles never change. A meeting still named "Meeting <date>" may get a title the next time its notes are written.
+- [ ] Upgrade from an older version with meetings you had renamed: their titles never change. A meeting still named "Meeting <date>" (old style) is renamed to the new style on upgrade ("Meeting on Sun 22 Nov, 3:45 PM"), and may get a title the next time its notes are written.
 
 **Quiet and distant voices** (live transcription)
 - [ ] Speak softly, then speak from about an arm's length or more away from the microphone. Live text should still appear. (Before this change nothing appeared when the level meter stayed in the bottom third.)

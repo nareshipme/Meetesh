@@ -48,9 +48,9 @@ const CATALOG = [
   { id: "whisper-tiny.en", role: "asr", name: "Whisper Tiny (English)", description: "Fastest, lowest accuracy.", size: 77_704_715, license: "MIT" },
   { id: "whisper-base.en", role: "asr", name: "Whisper Base (English)", description: "Good balance of speed and accuracy for most laptops.", size: 147_964_211, license: "MIT" },
   { id: "whisper-small.en-q5_1", role: "asr", name: "Whisper Small (English, compact)", description: "More accurate than Base, about twice as slow.", size: 190_098_681, license: "MIT" },
-  { id: "gemma-3-1b-it", role: "assist", name: "Gemma 3 1B (fast)", description: "Small and quick; hints are shorter and simpler.", size: 806_058_272, license: "Gemma terms" },
+  { id: "gemma-3-1b-it", role: "assist", name: "Gemma 3 1B (fast)", description: "About 1.5 times faster and under 1 GB of memory, but hints are more generic.", size: 806_058_272, license: "Gemma terms" },
   { id: "gemma-4-e2b-it", role: "assist", name: "Gemma 4 E2B", description: "The default: good hints, needs about 4 GB of memory.", size: 3_106_738_272, license: "Apache-2.0" },
-  { id: "gemma-3-4b-it", role: "assist", name: "Gemma 3 4B (better notes)", description: "Better summaries, slower; a good choice for notes.", size: 2_489_894_016, license: "Gemma terms" },
+  { id: "gemma-3-4b-it", role: "assist", name: "Gemma 3 4B", description: "Larger and about 2 times slower than Gemma 4 E2B; offered as an alternative.", size: 2_489_894_016, license: "Gemma terms" },
 ] as const;
 
 export function installMock(variant: string) {
@@ -95,7 +95,7 @@ export function installMock(variant: string) {
       ? []
       : [
           meeting(2, "Weekly product sync", 3600 * 3, { duration_ms: 52_000, title_source: "user", transcript_model: "whisper-base.en", audio_dir: "/tmp/2", has_system_audio: true, summary: SAMPLE_NOTES, summary_model: "gemma-4-e2b-it" }),
-          meeting(1, "Meeting 2026-11-20 16:40", 3600 * 30, { duration_ms: 1_805_000, status: "recovered", audio_dir: "/tmp/1" }),
+          meeting(1, "Meeting on Fri 20 Nov, 4:40 PM", 3600 * 30, { duration_ms: 1_805_000, status: "recovered", audio_dir: "/tmp/1" }),
         ];
   transcripts.set(
     2,
@@ -252,7 +252,7 @@ export function installMock(variant: string) {
         case "list_meetings":
           return meetings.map((m) => ({ ...m })).sort((x, y) => y.id - x.id);
         case "create_meeting": {
-          const m = meeting(nextId++, `Meeting ${new Date().toISOString().slice(0, 16).replace("T", " ")}`, 0);
+          const m = meeting(nextId++, `Meeting on ${new Date().toLocaleDateString("en-US", { weekday: "short", day: "numeric", month: "short" })}, ${new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`, 0);
           meetings.push(m);
           return m;
         }
