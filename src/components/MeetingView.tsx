@@ -3,6 +3,7 @@ import { api, Meeting } from "../api";
 import type { ModelLoadEvent } from "../api";
 import { useAutoHints } from "../hooks/useAutoHints";
 import { useHint } from "../hooks/useHint";
+import { useLivePoints } from "../hooks/useLivePoints";
 import type { Notify } from "../hooks/useToasts";
 import { useTranscript } from "../hooks/useTranscript";
 import { errorText, fmtDuration, fmtWhen } from "../lib/format";
@@ -185,6 +186,7 @@ type TranscriptState = ReturnType<typeof useTranscript>;
 function LiveView({ meeting, modelReady, assistReady, assistLoad, notify, onChange, onOpenSettings, onOpenMeeting, autoConsent, onConsentClosed, transcript, labelled }: Props & { transcript: TranscriptState; labelled: boolean }) {
   const hint = useHint(meeting.id, notify);
   const auto = useAutoHints(notify);
+  const points = useLivePoints(meeting.id, notify);
   const assistLoading = assistLoad?.state === "loading" || assistLoad?.state === "warming";
   const blocked = !assistReady
     ? "Download a live assist model first (Settings)"
@@ -224,7 +226,7 @@ function LiveView({ meeting, modelReady, assistReady, assistLoad, notify, onChan
           empty={modelReady ? "Listening… text appears here a few seconds after you speak." : "Download the speech model (Settings) to see live text while recording."}
         />
       </div>
-      <LiveAssist meeting={meeting} hint={hint} auto={auto} assistReady={assistReady} hintBlockedReason={blocked} notify={notify} onChange={onChange} onOpenSettings={onOpenSettings} onOpenMeeting={onOpenMeeting} />
+      <LiveAssist meeting={meeting} hint={hint} auto={auto} points={points} assistReady={assistReady} hintBlockedReason={blocked} notify={notify} onChange={onChange} onOpenSettings={onOpenSettings} onOpenMeeting={onOpenMeeting} />
     </div>
   );
 }

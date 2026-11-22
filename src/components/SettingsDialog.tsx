@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { useAutoHints } from "../hooks/useAutoHints";
 import type { ModelsState } from "../hooks/useModels";
+import { useLivePoints } from "../hooks/useLivePoints";
 import ModelSettings from "./ModelSettings";
 import type { AutoHintMode } from "../api";
 
@@ -13,6 +14,7 @@ interface Props {
 /** Everything you set up once: which models to use, automatic hints, and where things are. */
 export default function SettingsDialog({ ms, auto, onClose }: Props) {
   const ref = useRef<HTMLDivElement>(null);
+  const points = useLivePoints(0, () => {});
 
   // Focus the dialog, close on Escape, and give focus back to whatever opened it.
   useEffect(() => {
@@ -55,6 +57,11 @@ export default function SettingsDialog({ ms, auto, onClose }: Props) {
             </select>
           </label>
           <p className="muted small">Questions need the other participants recorded (system audio). Pauses work with a microphone alone.</p>
+          <label className="check">
+            <input type="checkbox" checked={points.enabled} onChange={(e) => points.setEnabled(e.target.checked)} />
+            Live points: a short list of what is being discussed, updated about once a minute while recording
+          </label>
+          <p className="muted small">It uses the processor for part of each minute. Turn it off if live text lags on a slow machine.</p>
         </section>
 
         <section>

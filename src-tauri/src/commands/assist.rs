@@ -160,6 +160,19 @@ pub fn active_hint(state: State<AppState>) -> Option<i64> {
     state.hint_job.lock().unwrap().as_ref().map(|j| j.meeting_id)
 }
 
+/// The live list of what is being discussed (and whether it is switched on).
+#[tauri::command]
+pub fn get_live_points(state: State<AppState>) -> crate::events::LivePointsEvent {
+    state.live_points.view()
+}
+
+#[tauri::command]
+pub fn set_live_points(app: AppHandle, state: State<AppState>, enabled: bool) -> Result<()> {
+    state.db.lock().unwrap().set_setting(crate::live_points::SETTING_KEY, if enabled { "on" } else { "off" })?;
+    state.live_points.set_enabled(&app, enabled);
+    Ok(())
+}
+
 /// How the app offers hints by itself: "off", "questions" or "questions_and_pauses".
 #[tauri::command]
 pub fn get_auto_hints(state: State<AppState>) -> String {

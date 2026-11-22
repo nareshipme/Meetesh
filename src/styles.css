@@ -298,3 +298,10 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 .hint-sources { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
 .source-chip { font: inherit; font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--accent); background: var(--bg); color: var(--accent); cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .source-chip:hover { background: var(--accent-soft); }
+
+/* Live points */
+.points { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+.points-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.points-head h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin: 0; }
+.points-now { font-weight: 600; line-height: 1.35; margin: 0; }
+.points-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; font-size: 13px; line-height: 1.4; }

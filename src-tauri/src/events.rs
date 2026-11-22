@@ -11,6 +11,7 @@ pub const LIVE_DONE: &str = "live-done";
 pub const HINT_PIECE: &str = "hint-piece";
 pub const HINT_DONE: &str = "hint-done";
 pub const SUMMARY_PROGRESS: &str = "summary-progress";
+pub const LIVE_POINTS: &str = "live-points";
 pub const MODEL_LOAD: &str = "model-load";
 
 #[derive(Serialize, Clone, Copy, PartialEq, Eq)]
@@ -137,4 +138,17 @@ pub struct HintSource {
     pub title: String,
     /// "Mon 16 Nov"
     pub day: String,
+}
+
+/// The live list of what is being discussed. Also sent when the setting is switched.
+#[derive(Serialize, Clone, Default)]
+pub struct LivePointsEvent {
+    pub meeting_id: i64,
+    /// Whether live points are switched on.
+    pub enabled: bool,
+    /// What is being discussed right now.
+    pub now: String,
+    pub points: Vec<String>,
+    /// An update is being written.
+    pub updating: bool,
 }

@@ -1,14 +1,17 @@
 import type { AutoHintMode, Meeting } from "../api";
 import type { useAutoHints } from "../hooks/useAutoHints";
 import type { useHint } from "../hooks/useHint";
+import type { useLivePoints } from "../hooks/useLivePoints";
 import type { Notify } from "../hooks/useToasts";
 import AgendaField from "./AgendaField";
 import HintPanel from "./HintPanel";
+import LivePointsPanel from "./LivePointsPanel";
 
 interface Props {
   meeting: Meeting;
   hint: ReturnType<typeof useHint>;
   auto: ReturnType<typeof useAutoHints>;
+  points: ReturnType<typeof useLivePoints>;
   assistReady: boolean;
   /** Why asking for a hint is not possible right now ("" when it is). */
   hintBlockedReason: string;
@@ -19,7 +22,7 @@ interface Props {
 }
 
 /** The side column of the live screen: hints, and the goals they follow. */
-export default function LiveAssist({ meeting, hint, auto, assistReady, hintBlockedReason, notify, onChange, onOpenSettings, onOpenMeeting }: Props) {
+export default function LiveAssist({ meeting, hint, auto, points, assistReady, hintBlockedReason, notify, onChange, onOpenSettings, onOpenMeeting }: Props) {
   return (
     <section className="assist" aria-label="Live assist">
       <div className="assist-head">
@@ -41,6 +44,8 @@ export default function LiveAssist({ meeting, hint, auto, assistReady, hintBlock
           <option value="questions_and_pauses">Auto hints: questions and pauses</option>
         </select>
       </div>
+
+      <LivePointsPanel points={points} assistReady={assistReady} />
 
       <button
         className="btn btn-hint btn-block"

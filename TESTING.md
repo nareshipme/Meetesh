@@ -106,6 +106,14 @@ MEETESH_TEST_MODEL=/path/to/ggml-tiny.en.bin \
 - [ ] **Copy Markdown** then paste into any editor: title, date, goals, notes and transcript read well. **Export Markdown** shows a path; open the file. With system audio the transcript lines say You / Others.
 - [ ] A notes-only meeting (no audio) exports and copies fine.
 
+**Live points** (needs the live-assist model)
+- [ ] While recording, the "Now discussing" box in the live assist column is empty for about a minute ("The list appears after about a minute of conversation"), then shows a one-line topic and up to six points. Keep talking about something else: the topic line changes and decisions appear as "Decided: …", open questions as "Open: …".
+- [ ] Nothing is made up: every point is something that was said. Note any that were wrong, and whether old points that no longer matter hang around.
+- [ ] While an update is being written the box says "Updating…". Live text keeps up (it should stay a few seconds behind speech at most). If live text lags on your machine, switch live points off (the box, or Settings) and tell us the CPU and whether the live-assist row says GPU or CPU.
+- [ ] Ask for a **✦ Hint** while an update is running: the hint is not slower than usual.
+- [ ] Switch it off: no more updates (nothing in the log says `live points for meeting`). On again: updates resume. Restart the app: the choice is remembered.
+- [ ] Stop the recording: the box goes away with the live screen; the list is not saved with the meeting (the notes are written from the transcript).
+
 **Hints that remember earlier meetings**
 - [ ] Have two meetings where the same topic comes up: for example record one where you decide something ("the vendor contract is capped at 40 thousand"), let its notes finish, then in a new recording (or in a second meeting after saying it again) talk about the vendor contract and ask for a **✦ Hint**. The hint can mention the earlier decision and the meeting it came from.
 - [ ] Under the hint, a line "The model also saw notes from:" shows the earlier meeting(s) as chips; clicking one opens that meeting.
