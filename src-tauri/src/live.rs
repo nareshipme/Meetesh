@@ -7,6 +7,7 @@ use meetesh_core::asr::live::{live_chunker_config, LiveReport, LiveSettle, LiveT
 use meetesh_core::{Source, Transcriber};
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::commands::summary::maybe_auto_summarize;
 use crate::commands::transcription::start_transcription;
 use crate::events::{LiveDoneEvent, LiveSegmentsEvent, LIVE_DONE, LIVE_SEGMENTS};
 use crate::state::{get_transcriber, AppState};
@@ -57,5 +58,8 @@ pub fn live_sink(app: &AppHandle, meeting_id: i64, model_id: String, source: Sou
 pub fn finish_live(app: &AppHandle, meeting_id: i64, report: LiveReport) {
     // The live transcript has gaps (transcriber fell behind, or the model failed): fill them from the audio.
     let full_pass_started = report.needs_full_pass() && start_transcription(app, meeting_id).is_ok();
+    if !full_pass_started {
+        maybe_auto_summarize(app, meeting_id); // the transcript is complete as it is
+    }
     let _ = app.emit(LIVE_DONE, LiveDoneEvent { meeting_id, full_pass_started });
 }

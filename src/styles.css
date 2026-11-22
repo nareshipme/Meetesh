@@ -195,3 +195,14 @@ progress { flex: 1; min-width: 100px; max-width: 320px; height: 8px; accent-colo
 
 .link-btn { font: inherit; font-size: 12px; background: none; border: 0; padding: 0; color: var(--muted); cursor: pointer; text-align: center; text-decoration: underline; }
 .link-btn:hover { color: var(--fg); }
+
+/* Meeting notes */
+.notes { margin: 0 0 14px; max-width: 760px; }
+.notes h2 { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 0; }
+.note-model { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.notes-body { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; }
+.notes-body h3 { font-size: 13px; margin: 10px 0 4px; }
+.notes-body h3:first-child { margin-top: 2px; }
+.notes-body p { margin: 0 0 6px; line-height: 1.5; }
+.notes-body ul { margin: 0 0 6px; padding-left: 20px; }
+.notes-body li { margin: 2px 0; line-height: 1.45; }

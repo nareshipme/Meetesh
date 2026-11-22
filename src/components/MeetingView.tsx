@@ -5,6 +5,7 @@ import type { Notify } from "../hooks/useToasts";
 import { errorText, fmtDuration, fmtWhen } from "../lib/format";
 import AgendaField from "./AgendaField";
 import Recorder from "./Recorder";
+import SummaryPanel from "./SummaryPanel";
 import Transcript from "./Transcript";
 
 interface Props {
@@ -130,6 +131,8 @@ export default function MeetingView({ meeting, recording, modelReady, assistRead
       </div>
 
       <AgendaField meeting={meeting} notify={notify} onChange={onChange} />
+
+      <SummaryPanel meeting={meeting} recording={recording} assistReady={assistReady} notify={notify} onChange={onChange} />
 
       <Transcript
         meeting={meeting}

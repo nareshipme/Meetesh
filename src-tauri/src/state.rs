@@ -45,6 +45,11 @@ pub struct HintJob {
     pub cancel: Arc<AtomicBool>,
 }
 
+pub struct SummaryJob {
+    pub meeting_id: i64,
+    pub cancel: Arc<AtomicBool>,
+}
+
 pub struct AppState {
     pub db: Mutex<Db>,
     pub recordings_root: PathBuf,
@@ -57,6 +62,7 @@ pub struct AppState {
     /// Loaded assist model (about 4 GB in memory). Loaded on the first hint, kept afterwards.
     pub assistant: Mutex<Option<Arc<LlamaAssistant>>>,
     pub hint_job: Mutex<Option<HintJob>>,
+    pub summary_job: Mutex<Option<SummaryJob>>,
     /// Live transcription chunks queued or in progress. Hint generation yields while this is above
     /// zero, so a hint never makes the live transcript lag.
     pub asr_pending: Arc<AtomicUsize>,
@@ -87,6 +93,7 @@ impl AppState {
             job: Mutex::new(None),
             assistant: Mutex::new(None),
             hint_job: Mutex::new(None),
+            summary_job: Mutex::new(None),
             asr_pending: Arc::new(AtomicUsize::new(0)),
             runtime: Mutex::new(HashMap::new()),
             download_cancel: Arc::new(AtomicBool::new(false)),

@@ -16,7 +16,7 @@ mod runtime;
 mod state;
 mod system_audio;
 
-use commands::{assist, meetings, models, recording, transcription};
+use commands::{assist, meetings, models, recording, summary, transcription};
 use state::AppState;
 use tauri::Manager;
 
@@ -64,7 +64,11 @@ pub fn run() {
             assist::request_hint,
             assist::cancel_hint,
             assist::assist_ready,
-            assist::active_hint
+            assist::active_hint,
+            summary::summarize_meeting,
+            summary::cancel_summary,
+            summary::active_summary,
+            summary::clear_summary
         ])
         .run(tauri::generate_context!())
         .expect("error while running Meetesh");

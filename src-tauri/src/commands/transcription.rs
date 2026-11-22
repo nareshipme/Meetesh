@@ -7,6 +7,7 @@ use meetesh_core::audio::{system_dir, wav};
 use meetesh_core::{Error, Result, Source, TranscriptSegment};
 use tauri::{AppHandle, Emitter, Manager, State};
 
+use crate::commands::summary::maybe_auto_summarize;
 use crate::events::{TranscribeEvent, TRANSCRIBE_PROGRESS};
 use crate::state::{get_transcriber, AppState, TranscriptionJob};
 
@@ -99,7 +100,10 @@ pub fn start_transcription(app: &AppHandle, meeting_id: i64) -> Result<()> {
         })();
         *st.job.lock().unwrap() = None;
         match outcome {
-            Ok(()) => emit(1.0, true, false, None),
+            Ok(()) => {
+                emit(1.0, true, false, None);
+                maybe_auto_summarize(&app, meeting_id);
+            }
             Err(Error::Cancelled) => emit(0.0, true, true, None),
             Err(e) => {
                 log::warn!("transcription failed: {e}");

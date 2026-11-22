@@ -10,6 +10,7 @@ pub const LIVE_SEGMENTS: &str = "live-segments";
 pub const LIVE_DONE: &str = "live-done";
 pub const HINT_PIECE: &str = "hint-piece";
 pub const HINT_DONE: &str = "hint-done";
+pub const SUMMARY_PROGRESS: &str = "summary-progress";
 pub const MODEL_LOAD: &str = "model-load";
 
 #[derive(Serialize, Clone, Copy, PartialEq, Eq)]
@@ -102,4 +103,16 @@ pub struct HintDoneEvent {
     /// Which processor produced the hint, and whether the GPU failed and the CPU took over.
     pub on_gpu: bool,
     pub cpu_fallback: bool,
+}
+
+/// Progress of writing the meeting notes. The finished text is saved with the meeting; the UI
+/// reloads the meeting when `finished` is set.
+#[derive(Serialize, Clone)]
+pub struct SummaryEvent {
+    pub meeting_id: i64,
+    pub done: usize,
+    pub total: usize,
+    pub finished: bool,
+    pub cancelled: bool,
+    pub error: Option<String>,
 }

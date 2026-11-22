@@ -5,7 +5,10 @@ export interface Meeting {
   id: number;
   title: string;
   created_at: number; // unix seconds
+  /** Meeting notes as Markdown ("" until written). */
   summary: string;
+  /** Model that wrote the notes. */
+  summary_model: string;
   transcript_model: string;
   /** Goals typed by the user; context for live hints. */
   agenda: string;
@@ -97,6 +100,16 @@ export interface LiveDoneEvent {
   full_pass_started: boolean;
 }
 
+export interface SummaryEvent {
+  meeting_id: number;
+  done: number;
+  total: number;
+  /** The run ended (written, cancelled or failed); reload the meeting. */
+  finished: boolean;
+  cancelled: boolean;
+  error: string | null;
+}
+
 export interface HintPieceEvent {
   meeting_id: number;
   hint_id: number;
@@ -159,5 +172,10 @@ export const api = {
   activeHint: () => invoke<number | null>("active_hint"),
   onHintPiece: (cb: (e: HintPieceEvent) => void) => listen<HintPieceEvent>("hint-piece", (e) => cb(e.payload)),
   onHintDone: (cb: (e: HintDoneEvent) => void) => listen<HintDoneEvent>("hint-done", (e) => cb(e.payload)),
+  summarizeMeeting: (id: number) => invoke<void>("summarize_meeting", { id }),
+  cancelSummary: () => invoke<void>("cancel_summary"),
+  activeSummary: () => invoke<number | null>("active_summary"),
+  clearSummary: (id: number) => invoke<Meeting>("clear_summary", { id }),
+  onSummary: (cb: (e: SummaryEvent) => void) => listen<SummaryEvent>("summary-progress", (e) => cb(e.payload)),
   onLevel: (cb: (level: number) => void) => listen<number>("recording-level", (e) => cb(e.payload)),
 };

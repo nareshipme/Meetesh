@@ -86,6 +86,16 @@ MEETESH_TEST_MODEL=/path/to/ggml-tiny.en.bin \
 - [ ] Ask for a hint repeatedly while you keep talking (live transcription running). The live text must keep up with your speech: it should stay a few seconds behind at most while hints are being generated. A hint may take a little longer to appear while you talk; that is expected, because it lets transcription go first. If live text still lags or the log says chunks were dropped, report it with your Mac model and whether the row says GPU or CPU.
 - [ ] Please report the time shown on a hint, your chip, macOS version, and memory use in Activity Monitor.
 
+**Meeting notes** (needs the live-assist model)
+- [ ] Record a short meeting with at least a couple of sentences of real content (decisions and who-does-what make it easier to judge), then **Stop**. After the live transcript settles, a "Notes" section shows "Writing notes…" with a progress bar by itself, then a summary, decisions and action items.
+- [ ] The notes are faithful: nothing invented (names, dates, numbers), decisions and action items match what was said. Note anything wrong or missing, with how long the meeting was and how long the notes took (the log has `summary for meeting N: … ms`).
+- [ ] **Copy** puts Markdown on the clipboard. **Regenerate** writes new notes from the current transcript. **Remove** clears them (**✦ Write meeting notes** appears).
+- [ ] **Cancel** during writing keeps any earlier notes. Starting a new recording while notes are being written cancels the notes (live transcription must not lag).
+- [ ] A very short meeting (a few words) gets no automatic notes; the button still works if there is a transcript.
+- [ ] Import a long recording (30+ minutes, or record one): notes still come out, in steps ("step 2 of 5"), and take minutes on a CPU, not hours. Report the time and whether the row says GPU or CPU.
+- [ ] Without the live-assist model downloaded, the button is greyed with a tooltip, and no notes are written automatically.
+- [ ] A call recorded with system audio: the notes can tell who said what ("you" versus the others).
+
 **Quiet and distant voices** (live transcription)
 - [ ] Speak softly, then speak from about an arm's length or more away from the microphone. Live text should still appear. (Before this change nothing appeared when the level meter stayed in the bottom third.)
 - [ ] Compare the live transcript with **Re-transcribe** on the same recording: they should be close. A big difference means the live path is losing words.
