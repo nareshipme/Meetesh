@@ -77,6 +77,11 @@ MEETESH_TEST_MODEL=/path/to/ggml-tiny.en.bin \
 - [ ] Ask for a hint while live transcription is running. Note whether the live text keeps up (a CPU-only machine may fall behind; that is expected and a gap-filling pass runs after stopping).
 - [ ] Please report the time shown on a hint, your chip, macOS version, and memory use in Activity Monitor.
 
+**Quiet and distant voices** (live transcription)
+- [ ] Speak softly, then speak from about an arm's length or more away from the microphone. Live text should still appear. (Before this change nothing appeared when the level meter stayed in the bottom third.)
+- [ ] Compare the live transcript with **Re-transcribe** on the same recording: they should be close. A big difference means the live path is losing words.
+- [ ] If words are still missing, note what you said, how far away you were, which microphone, and whether the level meter moved. Export the audio if you are happy to share it.
+
 **Stopping**
 - [ ] Click **Stop**: it returns instantly. The meeting shows "Recorded m:ss".
 - [ ] After a few seconds the transcript is complete (a gap-filling pass may run if live fell behind).

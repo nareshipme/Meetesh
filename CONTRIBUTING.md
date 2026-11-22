@@ -25,7 +25,8 @@ These keep the project private, portable and easy to change:
 3. **Models are configuration.** Do not hard-code model names in logic. Use the manifest and the traits (`Transcriber`, and later the assistant and summarizer).
 4. **Never block the audio callback.** Capture must not wait on inference, disk or locks. Slow work goes behind a bounded queue.
 5. **Never log transcript or audio content.** Log ids, counts and timings only.
-6. **Keep all `invoke()` calls in `src/api.ts`** so the UI stays easy to test and port.
+6. **Measure audio changes.** Anything that changes voice detection, chunking or volume handling must come with before/after numbers from the transcription quality bench (see the README, "Transcription quality bench"). Keep what lowers the error rate on more than one model, drop what does not.
+7. **Keep all `invoke()` calls in `src/api.ts`** so the UI stays easy to test and port.
 
 ## Definition of done
 A piece of work (a slice, a feature, a notable fix) is not done until all of these are true:

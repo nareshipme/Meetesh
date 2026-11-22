@@ -42,6 +42,7 @@ These show the interface running against the built-in sample-data backend (see [
 | Recover interrupted recordings on next launch | Working |
 | Local transcription of a finished recording (Whisper) with timestamps | Working |
 | Live transcription while recording (text a few seconds behind speech) | Working |
+| Quiet or distant voices are no longer ignored: speech detection follows the room's noise level instead of a fixed volume, and each chunk is volume-normalized before Whisper hears it (on synthetic speech from a faint microphone: 62 of 62 words lost before, 0 lost now) | Working on synthetic speech; needs confirming on real recordings ([#4](https://github.com/nareshipme/Meetesh/issues/4)) |
 | Model downloads you can pause, resume, retry or discard, with progress and a SHA-256 check (hashed while downloading, so there is no wait at 100%) | Working |
 | Models load in the background at startup, with a progress bar (real percentage for the live-assist model) and a warm-up, so the first hint is not slow | Working |
 | Live assist: ask for a short hint from the last few minutes (button or Ctrl/Cmd+Shift+H), written by an on-device model (Gemma 4 E2B), streamed into the window and labelled GPU or CPU | Working (manual trigger) |
@@ -67,7 +68,7 @@ Tracked as GitHub issues:
 | Issue | Kind |
 |---|---|
 | [#3 GPU is not used for model inference](https://github.com/nareshipme/Meetesh/issues/3) | Bug |
-| [#4 Missing words in the live transcript: improve audio before transcription](https://github.com/nareshipme/Meetesh/issues/4) | Improvement |
+| [#4 Missing words in the live transcript: improve audio before transcription](https://github.com/nareshipme/Meetesh/issues/4) (quiet-microphone loss fixed in tests; real-speech confirmation and a larger model option still open) | Improvement |
 | [#5 Live transcription lags while a hint is being generated](https://github.com/nareshipme/Meetesh/issues/5) | Bug |
 | [#6 One-click new recording](https://github.com/nareshipme/Meetesh/issues/6) | Improvement |
 | [#7 Auto-generate the meeting title with the local model](https://github.com/nareshipme/Meetesh/issues/7) | Feature |
@@ -79,7 +80,7 @@ Tracked as GitHub issues:
 - The live-assist model is a 3.1 GB download and, once downloaded, is loaded into memory at every start (about 4 GB). A per-user switch to load it only on demand is planned.
 - Models may run on the CPU even when a GPU is present ([#3](https://github.com/nareshipme/Meetesh/issues/3)). On a CPU-only 4-core Linux machine a hint takes about 6 s.
 - While a hint is generated, live transcription can lag ([#5](https://github.com/nareshipme/Meetesh/issues/5)).
-- Some words can be missing from the live transcript ([#4](https://github.com/nareshipme/Meetesh/issues/4)).
+- Some words can still be missing or wrong in the live transcript ([#4](https://github.com/nareshipme/Meetesh/issues/4)). Faint voices used to be dropped entirely; that is fixed on synthetic test speech but not yet confirmed on real recordings. The default speech model (Whisper base) also simply mishears words, more so with accents and noise; a larger model is not offered yet.
 - Microphone only. It cannot yet capture the other side of a call.
 - English-only speech models are in the manifest for now.
 - One recording per meeting.
@@ -153,6 +154,19 @@ MEETESH_TEST_MODEL=/path/to/ggml-tiny.en.bin \
 ```bash
 npm run tauri build         # installers for the OS you build on
 ```
+
+### Transcription quality bench
+
+Changes to voice detection, chunking or volume handling must be measured, not guessed. `tests/asr_quality.rs` plays known sentences (synthetic speech, see `tests/fixtures/speech/README.md`) through the pipeline in different conditions (clean, quiet, noisy, no pauses, trailing off, hum, faint far-away microphone) and reports the word error rate and how many words went missing, for the live path and for the whole recording:
+
+```bash
+MEETESH_TEST_MODEL=/path/to/ggml-base.en.bin \
+  cargo test -p meetesh-core --features whisper --test asr_quality -- --nocapture
+# one change at a time (old behaviour, each feature alone, everything):
+MEETESH_ABLATION=1 MEETESH_TEST_MODEL=... cargo test -p meetesh-core --features whisper --test asr_quality ablation -- --nocapture
+```
+
+The speech is synthetic, so it checks the audio handling and says nothing about Whisper's accuracy on real voices. Numbers vary by a few words between runs of different settings, so compare more than one model before trusting a small difference.
 
 ## Contributing
 
