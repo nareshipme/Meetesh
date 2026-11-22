@@ -5,7 +5,7 @@
 //! never block capture (NFR-06). If transcription falls behind, chunks are dropped from the live
 //! view and counted; the audio on disk is untouched, so a full pass can fill the gaps afterwards.
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{sync_channel, SyncSender, TrySendError};
 use std::sync::Arc;
 
@@ -74,6 +74,9 @@ pub struct LiveTranscriber {
     chunker: Chunker,
     tx: Option<SyncSender<Chunk>>,
     dropped: Arc<AtomicU64>,
+    /// Chunks queued or being transcribed right now. Other work (hint generation) watches this and
+    /// stays out of the way while it is above zero.
+    pending: Arc<AtomicUsize>,
 }
 
 impl LiveTranscriber {
@@ -87,6 +90,19 @@ impl LiveTranscriber {
         on_segments: impl Fn(Vec<TranscriptSegment>) + Send + 'static,
         on_done: impl FnOnce(LiveReport) + Send + 'static,
     ) -> Self {
+        Self::start_with_load(cfg, queue_len, loader, on_segments, on_done, Arc::new(AtomicUsize::new(0)))
+    }
+
+    /// Like `start`, publishing the number of chunks queued or in progress in `pending`.
+    pub fn start_with_load(
+        cfg: ChunkerConfig,
+        queue_len: usize,
+        loader: Loader,
+        on_segments: impl Fn(Vec<TranscriptSegment>) + Send + 'static,
+        on_done: impl FnOnce(LiveReport) + Send + 'static,
+        pending: Arc<AtomicUsize>,
+    ) -> Self {
+        let pending_worker = pending.clone();
         let (tx, rx) = sync_channel::<Chunk>(queue_len.max(1));
         let dropped = Arc::new(AtomicU64::new(0));
         let dropped_worker = dropped.clone();
@@ -103,6 +119,7 @@ impl LiveTranscriber {
                                 Err(e) => report.errors.push(e.to_string()),
                             }
                             report.chunks += 1;
+                            pending_worker.fetch_sub(1, Ordering::Relaxed);
                         }
                     }
                     Err(e) => {
@@ -110,6 +127,7 @@ impl LiveTranscriber {
                         // Keep draining so the producer never sees a dead channel mid-recording.
                         for _ in rx {
                             dropped_worker.fetch_add(1, Ordering::Relaxed);
+                            pending_worker.fetch_sub(1, Ordering::Relaxed);
                         }
                     }
                 }
@@ -117,14 +135,16 @@ impl LiveTranscriber {
                 on_done(report);
             })
             .expect("spawn live transcription thread");
-        LiveTranscriber { chunker: Chunker::new(cfg), tx: Some(tx), dropped }
+        LiveTranscriber { chunker: Chunker::new(cfg), tx: Some(tx), dropped, pending }
     }
 
     fn submit(&mut self, chunk: Chunk) {
         if let Some(tx) = &self.tx {
+            self.pending.fetch_add(1, Ordering::Relaxed);
             match tx.try_send(chunk) {
                 Ok(()) => {}
                 Err(TrySendError::Full(_)) | Err(TrySendError::Disconnected(_)) => {
+                    self.pending.fetch_sub(1, Ordering::Relaxed);
                     self.dropped.fetch_add(1, Ordering::Relaxed);
                 }
             }
@@ -287,6 +307,36 @@ mod tests {
         session.stop();
         assert!(t.elapsed() < Duration::from_millis(500), "stop() waited for inference: {:?}", t.elapsed());
         done_rx.recv_timeout(Duration::from_secs(10)).unwrap(); // backlog still completes in the background
+    }
+
+    #[test]
+    fn pending_counter_is_above_zero_while_chunks_are_queued_or_running_and_returns_to_zero() {
+        let pending = Arc::new(AtomicUsize::new(0));
+        let (done_tx, done_rx) = channel();
+        let l = LiveTranscriber::start_with_load(
+            live_chunker_config(),
+            8,
+            Box::new(|| Ok(Arc::new(Fake { delay: Duration::from_millis(200) }) as Arc<dyn Transcriber>)),
+            |_| {},
+            move |r| {
+                let _ = done_tx.send(r);
+            },
+            pending.clone(),
+        );
+        let session = RecordingSession::start(vec![Box::new(l)], 4096);
+        let mut p = session.pusher(16_000, 1);
+        for _ in 0..3 {
+            let mut u = talk(700);
+            u.extend(quiet(600));
+            for c in u.chunks(160) {
+                p.push_interleaved(c);
+            }
+        }
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(pending.load(Ordering::Relaxed) > 0, "work is queued or running, so others must yield");
+        session.stop();
+        done_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        assert_eq!(pending.load(Ordering::Relaxed), 0, "everything finished, so nothing is pending");
     }
 
     #[test]

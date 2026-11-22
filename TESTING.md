@@ -79,7 +79,7 @@ MEETESH_TEST_MODEL=/path/to/ggml-tiny.en.bin \
 - [ ] If the GPU fails, the hint should still appear, labelled "CPU (fallback)". If you see an error such as "llama decode failed", please send the details (see Troubleshooting in the README).
 - [ ] **Stop** while it is writing cancels it cleanly. Asking again right away works.
 - [ ] Open "Meeting goals", type a goal, click elsewhere, and ask for a hint: it should take the goal into account. Restart the app and check the goal was saved.
-- [ ] Ask for a hint while live transcription is running. Note whether the live text keeps up (a CPU-only machine may fall behind; that is expected and a gap-filling pass runs after stopping).
+- [ ] Ask for a hint repeatedly while you keep talking (live transcription running). The live text must keep up with your speech: it should stay a few seconds behind at most while hints are being generated. A hint may take a little longer to appear while you talk; that is expected, because it lets transcription go first. If live text still lags or the log says chunks were dropped, report it with your Mac model and whether the row says GPU or CPU.
 - [ ] Please report the time shown on a hint, your chip, macOS version, and memory use in Activity Monitor.
 
 **Quiet and distant voices** (live transcription)

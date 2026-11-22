@@ -45,7 +45,9 @@ pub fn request_hint(app: AppHandle, meeting_id: i64) -> Result<u64> {
             }
             let messages = build_hint_messages(&HintContext { agenda: meeting.agenda, recent }, Budget::default());
             let mut so_far = String::new();
-            assistant.complete(&messages, &GenOptions::hint(cancel.clone()), &mut |piece| {
+            // Let live transcription go first: the hint pauses while transcription work is pending.
+            let opts = GenOptions::hint(cancel.clone()).yielding_to(st.asr_pending.clone());
+            assistant.complete(&messages, &opts, &mut |piece| {
                 so_far.push_str(piece);
                 let _ = app.emit(HINT_PIECE, HintPieceEvent { meeting_id, hint_id, text: so_far.clone() });
                 true
@@ -57,11 +59,12 @@ pub fn request_hint(app: AppHandle, meeting_id: i64) -> Result<u64> {
             Ok(c) => {
                 // Timings and counts only: never log the hint or transcript text.
                 log::info!(
-                    "hint for meeting {meeting_id}: {} prompt tokens, {} generated, first token {} ms, total {} ms, {}{}",
+                    "hint for meeting {meeting_id}: {} prompt tokens, {} generated, first token {} ms, total {} ms ({} ms held back for transcription), {}{}",
                     c.stats.prompt_tokens,
                     c.stats.generated_tokens,
                     c.stats.first_token_ms,
                     c.stats.total_ms,
+                    c.stats.yielded_ms,
                     if c.stats.on_gpu { "GPU" } else { "CPU" },
                     if c.stats.cpu_fallback { " (GPU failed, fell back to CPU)" } else { "" }
                 );
