@@ -15,10 +15,11 @@ interface Props {
   notify: Notify;
   onChange: () => void;
   onOpenSettings: () => void;
+  onOpenMeeting: (id: number) => void;
 }
 
 /** The side column of the live screen: hints, and the goals they follow. */
-export default function LiveAssist({ meeting, hint, auto, assistReady, hintBlockedReason, notify, onChange, onOpenSettings }: Props) {
+export default function LiveAssist({ meeting, hint, auto, assistReady, hintBlockedReason, notify, onChange, onOpenSettings, onOpenMeeting }: Props) {
   return (
     <section className="assist" aria-label="Live assist">
       <div className="assist-head">
@@ -64,7 +65,7 @@ export default function LiveAssist({ meeting, hint, auto, assistReady, hintBlock
           )}
         </p>
       ) : (
-        <HintPanel state={hint.state} onCancel={hint.cancel} onDismiss={hint.dismiss} />
+        <HintPanel state={hint.state} onCancel={hint.cancel} onDismiss={hint.dismiss} onOpenMeeting={onOpenMeeting} />
       )}
 
       <AgendaField meeting={meeting} notify={notify} onChange={onChange} />

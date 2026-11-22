@@ -6,6 +6,7 @@
 //!   implementation; a fake one drives the tests. Models are chosen by id from the manifest.
 
 pub mod gate;
+pub mod memory;
 pub mod prompt;
 pub mod summary;
 pub mod title;

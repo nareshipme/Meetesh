@@ -164,7 +164,16 @@ export interface HintPieceEvent {
   text: string;
 }
 
+/** An earlier meeting whose notes the model was shown for a hint. */
+export interface HintSource {
+  meeting_id: number;
+  title: string;
+  /** "Mon 16 Nov" */
+  day: string;
+}
+
 export interface HintDoneEvent {
+  sources: HintSource[];
   trigger: HintTrigger;
   meeting_id: number;
   hint_id: number;

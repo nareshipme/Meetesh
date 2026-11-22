@@ -293,3 +293,8 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 }
 .tab-dot.busy { animation: pulse 1.2s ease-in-out infinite; }
 .live-main .recorder.recording { flex: none; min-width: 0; }
+
+/* Hints that drew on earlier meetings */
+.hint-sources { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+.source-chip { font: inherit; font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--accent); background: var(--bg); color: var(--accent); cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.source-chip:hover { background: var(--accent-soft); }

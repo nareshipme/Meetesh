@@ -39,7 +39,7 @@ fn segments() -> Vec<TranscriptSegment> {
 }
 
 fn hint(a: &LlamaAssistant) -> (Duration, String) {
-    let ctx = HintContext { agenda: String::new(), recent: segments() };
+    let ctx = HintContext { related: vec![], agenda: String::new(), recent: segments() };
     let t = Instant::now();
     let c = a
         .complete(&build_hint_messages(&ctx, Budget::default()), &GenOptions::hint(Arc::new(AtomicBool::new(false))), &mut |_| true)

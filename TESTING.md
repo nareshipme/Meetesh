@@ -106,6 +106,13 @@ MEETESH_TEST_MODEL=/path/to/ggml-tiny.en.bin \
 - [ ] **Copy Markdown** then paste into any editor: title, date, goals, notes and transcript read well. **Export Markdown** shows a path; open the file. With system audio the transcript lines say You / Others.
 - [ ] A notes-only meeting (no audio) exports and copies fine.
 
+**Hints that remember earlier meetings**
+- [ ] Have two meetings where the same topic comes up: for example record one where you decide something ("the vendor contract is capped at 40 thousand"), let its notes finish, then in a new recording (or in a second meeting after saying it again) talk about the vendor contract and ask for a **✦ Hint**. The hint can mention the earlier decision and the meeting it came from.
+- [ ] Under the hint, a line "The model also saw notes from:" shows the earlier meeting(s) as chips; clicking one opens that meeting.
+- [ ] A topic never discussed before gives a normal hint with no chips. Small talk ("thanks, see you") never pulls in old meetings.
+- [ ] The meeting you are in is never offered as its own memory. A meeting you deleted is not offered.
+- [ ] Note the time a hint takes with and without earlier-meeting notes (it is longer with them, about 4 s on a CPU in our test), and any hint where the earlier meeting was irrelevant or wrongly cited.
+
 **Automatic hints** (needs the live-assist model; for questions also system audio, see above)
 - [ ] The menu "Auto hints" in the live assist column (also in Settings > Hints) is off by default. Choose "on questions", restart the app: the choice is remembered.
 - [ ] Record a call with the other participants captured. When someone asks you a question (say it from a video or a colleague), about 2 s after they finish, a hint appears labelled "after a question". If you start answering right away, no hint appears.

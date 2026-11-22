@@ -4,10 +4,12 @@ interface Props {
   state: HintState;
   onCancel: () => void;
   onDismiss: () => void;
+  /** Open an earlier meeting the hint drew on. */
+  onOpenMeeting?: (id: number) => void;
 }
 
 /** The live-assist hint: streams in as the model writes it, stays until dismissed. */
-export default function HintPanel({ state, onCancel, onDismiss }: Props) {
+export default function HintPanel({ state, onCancel, onDismiss, onOpenMeeting }: Props) {
   if (state.kind === "idle") return null;
 
   return (
@@ -27,6 +29,16 @@ export default function HintPanel({ state, onCancel, onDismiss }: Props) {
               <span className="muted">Thinking… (the first hint loads the model, which takes a few seconds)</span>
             ))}
           {state.kind === "done" && state.text}
+          {state.kind === "done" && state.sources.length > 0 && (
+            <div className="hint-sources">
+              <small className="muted">The model also saw notes from:</small>
+              {state.sources.map((s) => (
+                <button key={s.meeting_id} className="source-chip" onClick={() => onOpenMeeting?.(s.meeting_id)} title="Open that meeting">
+                  {s.title} · {s.day}
+                </button>
+              ))}
+            </div>
+          )}
           {state.kind === "none" && <span className="muted">Nothing useful to suggest right now.</span>}
           {state.kind === "error" && <span className="error-text">{state.message}</span>}
         </div>
