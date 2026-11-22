@@ -2,9 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
 import MeetingView from "./components/MeetingView";
 import LoadingBanner from "./components/LoadingBanner";
+import SettingsDialog from "./components/SettingsDialog";
 import Sidebar from "./components/Sidebar";
 import Toasts from "./components/Toasts";
 import { useMeetings } from "./hooks/useMeetings";
+import { useAutoHints } from "./hooks/useAutoHints";
 import { useModels } from "./hooks/useModels";
 import { useToasts } from "./hooks/useToasts";
 import { errorText } from "./lib/format";
@@ -13,6 +15,10 @@ export default function App() {
   const { toasts, notify, dismiss } = useToasts();
   const { meetings, recordingId, transcribingId, refresh } = useMeetings(notify);
   const models = useModels(notify);
+  const autoHints = useAutoHints(notify);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const openSettings = useCallback(() => setSettingsOpen(true), []);
+  const closeSettings = useCallback(() => setSettingsOpen(false), []);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   // A meeting just created by "New recording": its consent notice opens straight away.
   const [pendingConsent, setPendingConsent] = useState<{ id: number; title: string } | null>(null);
@@ -42,12 +48,16 @@ export default function App() {
   const newRecording = useCallback(() => createMeeting(true), [createMeeting]);
   const newNotes = useCallback(() => createMeeting(false), [createMeeting]);
 
-  // Cmd/Ctrl+N starts a new recording.
+  // Cmd/Ctrl+N starts a new recording; Cmd/Ctrl+, opens Settings.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === "n") {
         e.preventDefault();
         newRecording();
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === ",") {
+        e.preventDefault();
+        setSettingsOpen(true);
       }
     }
     window.addEventListener("keydown", onKey);
@@ -86,6 +96,7 @@ export default function App() {
         onSelect={setSelectedId}
         onNewRecording={newRecording}
         onNewNotes={newNotes}
+        onOpenSettings={openSettings}
         hidden={selected !== null}
       />
       <main className={selected ? "main" : "main hide-on-mobile"}>
@@ -101,6 +112,7 @@ export default function App() {
             autoConsent={pendingConsent?.id === selected.id}
             onConsentClosed={onConsentClosed}
             onChange={refresh}
+            onOpenSettings={openSettings}
             onBack={() => setSelectedId(null)}
             onDeleted={() => {
               setSelectedId(null);
@@ -112,7 +124,15 @@ export default function App() {
             <h2>Welcome to Meetesh</h2>
             <p className="muted">Private meeting notes. Everything runs on this device.</p>
             <ol>
-              {!models.speechInstalled && <li>Download the speech model (once) from the panel at the bottom left.</li>}
+              {!models.speechInstalled && (
+                <li>
+                  Download a speech model (once) in{" "}
+                  <button className="link-btn inline" onClick={openSettings}>
+                    Settings
+                  </button>
+                  .
+                </li>
+              )}
               <li>Press New recording and confirm.</li>
               <li>Talk. Live text appears as you speak.</li>
             </ol>
@@ -128,6 +148,7 @@ export default function App() {
           </div>
         )}
       </main>
+      {settingsOpen && <SettingsDialog ms={models} auto={autoHints} onClose={closeSettings} />}
       <Toasts toasts={toasts} onDismiss={dismiss} />
     </div>
   );

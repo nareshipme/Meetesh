@@ -62,6 +62,8 @@ These show the interface running against the built-in sample-data backend (see [
 | **Search** across everything: titles, notes and transcript lines, as you type (Ctrl/Cmd+K), with the matched words highlighted and up to three places per meeting (a transcript hit shows its timestamp). Every word must appear, each as a prefix ("quarter road" finds "quarterly roadmap"); case and accents are ignored. Built on SQLite FTS5, so it stays on the device; on a synthetic archive of 500 meetings and 200,000 transcript lines, building the index took 0.3 s (once, on upgrade), a search of two common words 80 ms, and saving a live line with the index kept up to date 0.9 ms. Live text is searchable as it arrives | Working |
 | **Markdown export**: **Copy Markdown** or **Export Markdown** (a `.md` file in the app's `exports` folder) with title, date, duration, goals, notes and the transcript (You / Others when both sides were recorded) | Working |
 | Meetings list, rename, delete (audio is deleted with the meeting), WAV export | Working |
+| **A calmer layout**: while recording, a *live screen* (transcript on the left; on the right the hint button, the automatic-hints menu, the current hint and the meeting goals). After recording, a *review page* with tabs **Notes / Transcript / Goals**, and a **⋯** menu for the rarer actions (copy or export Markdown, export audio, re-transcribe, delete). Everything you set up once is in one **Settings** dialog (gear, or Ctrl/Cmd+,). The sidebar is only meetings, search and a one-line model status | Working in the mock-backend UI checks; not yet used on real hardware |
+| **Choose the model for each job** (closes [#8](https://github.com/nareshipme/Meetesh/issues/8)): speech to text (Whisper Tiny, Base, Small compact), hints (Gemma 3 1B fast, Gemma 4 E2B, Gemma 3 4B) and meeting notes and titles (same as hints, or another model, e.g. a bigger one since it runs in the background). Choices are remembered; a model that is not installed shows its download in the same box; a model nobody uses any more is released from memory | Selection logic unit-tested; see "Model choices" below for what was measured |
 | Responsive, dark-mode-aware UI | Working |
 
 What a person has actually tried on real hardware, and what only has automated checks, is tracked in [docs/VERIFICATION.md](docs/VERIFICATION.md).
@@ -84,7 +86,6 @@ Tracked as GitHub issues:
 |---|---|
 | [#3 GPU is not used for model inference](https://github.com/nareshipme/Meetesh/issues/3) (diagnostics, log capture and opt-in Vulkan added; the Mac cause still needs a `gpu_probe` run) | Bug |
 | [#4 Missing words in the live transcript: improve audio before transcription](https://github.com/nareshipme/Meetesh/issues/4) (quiet-microphone loss fixed in tests; real-speech confirmation and a larger model option still open) | Improvement |
-| [#8 Decide: should users be able to choose their models?](https://github.com/nareshipme/Meetesh/issues/8) | Design question |
 
 ## Limitations
 
@@ -132,7 +133,7 @@ npm run tauri dev
 ```
 
 The first build takes several minutes: Whisper and llama.cpp compile from source, and dependencies are built optimized even in dev builds (so hashing a 3 GB model is fast). Then in the app:
-1. Download the speech model from the sidebar (about 148 MB, once). The optional live-assist model is 3.1 GB. Downloaded models load in the background at every start; the bar at the top shows progress.
+1. Open **Settings** (the gear, or Ctrl/Cmd+,) and download the speech model (Whisper Base, about 148 MB, once). The optional live-assist model (Gemma 4 E2B) is 3.1 GB; a smaller, faster one (Gemma 3 1B, 0.8 GB) is also offered. Downloaded models load in the background at every start; the bar at the top shows progress.
 2. Click **● New recording** (or press Ctrl/Cmd+N) and confirm the consent notice. Your OS may ask for microphone permission.
 3. Talk. Live text appears as you speak. Click **Stop** when done.
 

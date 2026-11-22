@@ -8,7 +8,7 @@ use meetesh_core::assist::llama::LlamaAssistant;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::events::{LoadState, ModelLoadEvent, MODEL_LOAD};
-use crate::state::{get_transcriber, load_assistant, AppState, PROFILE};
+use crate::state::{get_transcriber, load_assistant, AppState};
 
 fn publish(app: &AppHandle, ev: ModelLoadEvent) {
     app.state::<AppState>().runtime.lock().unwrap().insert(ev.id.clone(), ev.clone());
@@ -25,14 +25,14 @@ pub fn forget(app: &AppHandle, entry: &ModelEntry) {
     let _ = app.emit(MODEL_LOAD, event(entry, LoadState::Idle));
 }
 
-/// Load every installed default model (speech first, then live assist), one after the other.
+/// Load every installed model the user has selected (or the default) (speech first, then live assist), one after the other.
 pub fn preload_all(app: &AppHandle) {
     let app = app.clone();
     std::thread::spawn(move || {
         let st = app.state::<AppState>();
         let entries: Vec<ModelEntry> = [Role::Asr, Role::Assist]
             .into_iter()
-            .filter_map(|r| st.manifest.default_for(PROFILE, r).cloned())
+            .filter_map(|r| st.model_for(r).ok().cloned())
             .filter(|m| st.models.is_installed(m))
             .collect();
         for entry in entries {
@@ -86,7 +86,7 @@ fn load_one(app: &AppHandle, entry: &ModelEntry) -> Result<String> {
             // Report real progress from llama.cpp, but only when the whole percent changes.
             let (app2, entry2) = (app.clone(), entry.clone());
             let mut last = -1i32;
-            let assistant = load_assistant(app, move |p| {
+            let assistant = load_assistant(app, entry, move |p| {
                 let pct = (p * 100.0) as i32;
                 if pct != last {
                     last = pct;

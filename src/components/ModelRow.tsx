@@ -4,9 +4,10 @@ import type { ModelsState } from "../hooks/useModels";
 const size = (b: number) => (b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${Math.round(b / 1e6)} MB`);
 const pct = (frac: number) => `${Math.round(frac * 100)}%`;
 
-const ROLE_LABEL: Record<ModelInfo["role"], string> = { asr: "Speech to text", assist: "Live assist (optional)" };
+const KIND_LABEL: Record<ModelInfo["role"], string> = { asr: "Speech to text", assist: "Language model" };
 
-function Row({ m, ms }: { m: ModelInfo; ms: ModelsState }) {
+/** One model: its state (not installed, downloading, paused, failed, loading, ready) and the buttons for it. */
+export default function ModelRow({ m, ms }: { m: ModelInfo; ms: ModelsState }) {
   const dl = ms.downloads[m.id];
   const rt = ms.runtime[m.id];
   const otherBusy = ms.activeDownloadId !== null && ms.activeDownloadId !== m.id;
@@ -79,7 +80,7 @@ function Row({ m, ms }: { m: ModelInfo; ms: ModelsState }) {
     } else {
       status = (
         <small className="muted">
-          {ROLE_LABEL[m.role]} · {size(m.size_bytes)} one-time download
+          {KIND_LABEL[m.role]} · {size(m.size_bytes)} one-time download
         </small>
       );
       controls = (
@@ -124,7 +125,7 @@ function Row({ m, ms }: { m: ModelInfo; ms: ModelsState }) {
     status = (
       <>
         <small className={gpuFailed ? "warn" : "muted"}>
-          {ROLE_LABEL[m.role]} · ready{rt.backend ? ` · ${rt.backend}` : ""}
+          {KIND_LABEL[m.role]} · ready{rt.backend ? ` · ${rt.backend}` : ""}
         </small>
         {noGpuBuild && (
           <small className="muted">
@@ -154,18 +155,6 @@ function Row({ m, ms }: { m: ModelInfo; ms: ModelsState }) {
         </div>
       </div>
       {controls && <div className="row model-controls">{controls}</div>}
-    </div>
-  );
-}
-
-/** The models this device uses (speech, live assist): download, pause/resume/retry, and loading progress. */
-export default function ModelPanel({ ms }: { ms: ModelsState }) {
-  if (ms.models.length === 0) return null;
-  return (
-    <div className="model-panel">
-      {ms.models.map((m) => (
-        <Row key={m.id} m={m} ms={ms} />
-      ))}
     </div>
   );
 }

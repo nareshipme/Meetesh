@@ -5,10 +5,10 @@ import { errorText } from "../lib/format";
 
 interface Props {
   meeting: Meeting;
-  recording: boolean;
   assistReady: boolean;
   notify: Notify;
   onChange: () => void;
+  onOpenSettings: () => void;
 }
 
 /** The notes are stored as small Markdown: "## Heading", "- item" and plain paragraphs. */
@@ -31,8 +31,8 @@ function Notes({ text }: { text: string }) {
   return <div className="notes-body">{blocks}</div>;
 }
 
-/** Meeting notes: summary, decisions and action items written by the on-device model after a meeting. */
-export default function SummaryPanel({ meeting, recording, assistReady, notify, onChange }: Props) {
+/** Meeting notes (summary, decisions, action items) written by the on-device model after a meeting. */
+export default function SummaryPanel({ meeting, assistReady, notify, onChange, onOpenSettings }: Props) {
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
 
   useEffect(() => {
@@ -51,7 +51,6 @@ export default function SummaryPanel({ meeting, recording, assistReady, notify, 
   }, [meeting.id, notify, onChange]);
 
   const hasTranscript = meeting.transcript_model !== "";
-  if (recording || (!meeting.summary && !progress && !hasTranscript)) return null;
 
   async function run() {
     setProgress({ done: 0, total: 1 });
@@ -81,17 +80,9 @@ export default function SummaryPanel({ meeting, recording, assistReady, notify, 
     }
   }
 
-  const title = (
-    <h2>
-      Notes
-      {meeting.summary_model && !progress && <span className="muted note-model"> · written on this device by {meeting.summary_model}</span>}
-    </h2>
-  );
-
   if (progress) {
     return (
       <section className="notes">
-        <div className="transcript-head">{title}</div>
         <div className="row progress-row">
           <progress value={progress.done} max={Math.max(progress.total, 1)} aria-label="Writing notes" />
           <span className="muted">
@@ -101,32 +92,39 @@ export default function SummaryPanel({ meeting, recording, assistReady, notify, 
             Cancel
           </button>
         </div>
+        {meeting.summary && <Notes text={meeting.summary} />}
       </section>
     );
   }
 
   if (!meeting.summary) {
     return (
-      <section className="notes">
-        <div className="transcript-head">
-          {title}
-          <button
-            className="btn btn-sm btn-hint"
-            onClick={run}
-            disabled={!assistReady}
-            title={assistReady ? "Summary, decisions and action items from the transcript" : "Download the live assist model first (sidebar); it also writes the notes"}
-          >
-            ✦ Write meeting notes
-          </button>
-        </div>
+      <section className="notes notes-empty">
+        <p className="muted">
+          {!hasTranscript
+            ? "There is no transcript yet, so there are no notes."
+            : assistReady
+              ? "No notes yet. The on-device model writes a summary, decisions and action items."
+              : "Notes are written by the on-device model."}
+        </p>
+        {hasTranscript &&
+          (assistReady ? (
+            <button className="btn btn-hint" onClick={run}>
+              ✦ Write meeting notes
+            </button>
+          ) : (
+            <button className="btn" onClick={onOpenSettings}>
+              Set up the model in Settings
+            </button>
+          ))}
       </section>
     );
   }
 
   return (
     <section className="notes">
-      <div className="transcript-head">
-        {title}
+      <div className="notes-bar">
+        <small className="muted">{meeting.summary_model ? `Written on this device by ${meeting.summary_model}` : ""}</small>
         <div className="row">
           <button className="btn btn-sm" onClick={copy}>
             Copy

@@ -11,7 +11,7 @@ use meetesh_core::{Error, Result};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::events::{SummaryEvent, SUMMARY_PROGRESS};
-use crate::state::{get_assistant, AppState, SummaryJob};
+use crate::state::{get_notes_assistant, release_unused_assistants, AppState, SummaryJob};
 
 /// Too little was said to be worth a summary (about a dozen words).
 const MIN_WORDS_FOR_AUTO: usize = 25;
@@ -53,7 +53,7 @@ pub fn cancel_running(state: &AppState) {
 /// is installed and the meeting has enough in it. Quietly does nothing otherwise.
 pub fn maybe_auto_summarize(app: &AppHandle, meeting_id: i64) {
     let st = app.state::<AppState>();
-    let installed = st.assist_model().map(|m| st.models.is_installed(m)).unwrap_or(false);
+    let installed = st.summary_model().map(|m| st.models.is_installed(m)).unwrap_or(false);
     if !installed {
         return;
     }
@@ -72,9 +72,9 @@ pub fn maybe_auto_summarize(app: &AppHandle, meeting_id: i64) {
 
 fn start_summary(app: &AppHandle, meeting_id: i64) -> Result<()> {
     let st = app.state::<AppState>();
-    let entry = st.assist_model()?.clone();
+    let entry = st.summary_model()?.clone();
     if !st.models.is_installed(&entry) {
-        return Err(Error::Other("Download the live assist model first (it also writes the meeting notes)".into()));
+        return Err(Error::Other(format!("Download {} first (it writes the meeting notes; you can pick another model in the sidebar)", entry.name)));
     }
     let meeting = st.db.lock().unwrap().get_meeting(meeting_id)?;
     if meeting.status == "recording" {
@@ -102,7 +102,7 @@ fn start_summary(app: &AppHandle, meeting_id: i64) -> Result<()> {
         emit(0, 1, false, false, None);
         let started = std::time::Instant::now();
         let outcome = (|| -> Result<String> {
-            let assistant = get_assistant(&app)?; // may load the model first
+            let assistant = get_notes_assistant(&app)?; // may load the model first
             let run = SummaryRun { cancel: cancel.clone(), yield_to: Some(st.asr_pending.clone()) };
             let summary = summarize(assistant.as_ref(), &segments, &meeting.agenda, &run, |d, t| emit(d, t, false, false, None))?;
             let md = summary.to_markdown();
@@ -124,6 +124,7 @@ fn start_summary(app: &AppHandle, meeting_id: i64) -> Result<()> {
             Ok(md)
         })();
         *st.summary_job.lock().unwrap() = None;
+        release_unused_assistants(&app); // a notes model that differs from the hints model is not kept in memory
         match outcome {
             Ok(md) => {
                 // Sizes and timing only: never log the notes themselves.

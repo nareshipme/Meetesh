@@ -4,7 +4,6 @@ import { useSearch } from "../hooks/useSearch";
 import SearchResults from "./SearchResults";
 import type { ModelsState } from "../hooks/useModels";
 import { fmtDuration, fmtWhen } from "../lib/format";
-import ModelPanel from "./ModelPanel";
 
 interface Props {
   meetings: Meeting[];
@@ -15,6 +14,7 @@ interface Props {
   onSelect: (id: number) => void;
   onNewRecording: () => void;
   onNewNotes: () => void;
+  onOpenSettings: () => void;
   hidden: boolean; // on narrow screens only one pane shows at a time
 }
 
@@ -25,7 +25,19 @@ function statusChip(m: Meeting, recordingId: number | null, transcribingId: numb
   return null;
 }
 
-export default function Sidebar({ meetings, selectedId, recordingId, transcribingId, models, onSelect, onNewRecording, onNewNotes, hidden }: Props) {
+/** One line about the models: ready, loading, or what is missing. */
+function modelStatus(ms: ModelsState): { dot: string; text: string } {
+  if (!ms.speechInstalled) return { dot: "dot-bad", text: "Download a speech model to start" };
+  const loading = ms.models.some((m) => m.installed && ["loading", "warming"].includes(ms.runtime[m.id]?.state ?? ""));
+  if (loading) return { dot: "dot-busy", text: "Loading models…" };
+  const failed = ms.models.some((m) => ms.runtime[m.id]?.state === "failed");
+  if (failed) return { dot: "dot-bad", text: "A model could not load" };
+  if (!ms.assistInstalled) return { dot: "dot-off", text: "Hints and notes: not set up" };
+  return { dot: "dot-ok", text: "Models ready" };
+}
+
+export default function Sidebar({ meetings, selectedId, recordingId, transcribingId, models, onSelect, onNewRecording, onNewNotes, onOpenSettings, hidden }: Props) {
+  const status = modelStatus(models);
   const [query, setQuery] = useState("");
   const search = useSearch(query);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -46,7 +58,12 @@ export default function Sidebar({ meetings, selectedId, recordingId, transcribin
   return (
     <aside className={hidden ? "sidebar hide-on-mobile" : "sidebar"}>
       <div className="sidebar-top">
-        <h1 className="brand">Meetesh</h1>
+        <div className="brand-row">
+          <h1 className="brand">Meetesh</h1>
+          <button className="icon-btn" onClick={onOpenSettings} aria-label="Settings" title="Settings (Ctrl/Cmd+,)">
+            ⚙
+          </button>
+        </div>
         <button className="btn btn-primary btn-block" onClick={onNewRecording} title="Start a new recording (Ctrl/Cmd+N)">
           ● New recording
         </button>
@@ -91,7 +108,10 @@ export default function Sidebar({ meetings, selectedId, recordingId, transcribin
         ))}
       </nav>
 
-      <ModelPanel ms={models} />
+      <button className="sidebar-status" onClick={onOpenSettings} title="Open Settings">
+        <span className={`dot ${status.dot}`} aria-hidden />
+        <span>{status.text}</span>
+      </button>
     </aside>
   );
 }
