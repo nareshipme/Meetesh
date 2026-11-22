@@ -30,7 +30,7 @@ MEETESH_TEST_MODEL=/path/to/ggml-tiny.en.bin \
 ## 3. Checklist
 
 **Meetings**
-- [ ] App opens with "No meetings yet." Click **+ New meeting**: it appears in the list and is selected.
+- [ ] App opens with "No meetings yet." Click **or a meeting for notes only**: an empty meeting appears in the list and is selected, with no consent notice.
 - [ ] Edit the title and click elsewhere: the list updates. Restart the app: the title persisted.
 - [ ] **Delete** asks for confirmation and removes the meeting.
 
@@ -41,7 +41,11 @@ MEETESH_TEST_MODEL=/path/to/ggml-tiny.en.bin \
 - [ ] Turn off your network now. Everything below must still work offline.
 
 **Recording**
-- [ ] Select the meeting, click **Record**: a consent notice appears. Click "Everyone knows, start recording".
+- [ ] Click **● New recording** (or press Ctrl/Cmd+N): a meeting is created and the consent notice is already open, with the "Everyone knows, start recording" button focused. Press Enter (or click it): recording starts. That is one click plus Enter, or two clicks.
+- [ ] While recording, press Ctrl/Cmd+N or click New recording again: you are taken to the running recording with a message, and no second one starts.
+- [ ] Click New recording, then **Cancel** or press Escape: the empty meeting disappears. If you renamed it first, it is kept.
+- [ ] Choose a different microphone in the confirm step, quit and reopen the app: it is remembered (and falls back to the default if that device is no longer connected).
+- [ ] On a notes-only meeting, **● Record** still works and shows the consent notice.
 - [ ] The OS may ask for microphone permission. Allow it.
 - [ ] The timer counts up and the level meter moves when you talk and falls when you are quiet.
 - [ ] The microphone dropdown lists your devices. Choosing a non-default one records from it.

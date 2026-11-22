@@ -186,3 +186,6 @@ progress { flex: 1; min-width: 100px; max-width: 320px; height: 8px; accent-colo
 .loading-lines { display: flex; flex-direction: column; gap: 8px; }
 .loading-line { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, 40%); align-items: center; gap: 12px; font-size: 13px; }
 .loading-line progress { max-width: none; width: 100%; }
+
+.link-btn { font: inherit; font-size: 12px; background: none; border: 0; padding: 0; color: var(--muted); cursor: pointer; text-align: center; text-decoration: underline; }
+.link-btn:hover { color: var(--fg); }
