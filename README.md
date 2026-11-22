@@ -12,7 +12,7 @@ The name comes from *ishara* (इशारा), Hindi/Urdu for a quiet hint or s
 ## Why Meetesh
 
 - **Private by design.** Audio and transcripts stay on your device. After the one-time model download, the app works fully offline. Nothing is uploaded.
-- **Local models.** Speech recognition ([whisper.cpp](https://github.com/ggml-org/whisper.cpp)) and live hints ([llama.cpp](https://github.com/ggml-org/llama.cpp) with Gemma 4 E2B) run on-device. No API keys needed.
+- **Local models.** Speech recognition ([whisper.cpp](https://github.com/ggml-org/whisper.cpp), or NVIDIA Parakeet on ONNX Runtime) and live hints ([llama.cpp](https://github.com/ggml-org/llama.cpp) with Gemma 4 E2B) run on-device. No API keys needed.
 - **Light and native.** Built with [Tauri](https://tauri.app) and Rust, not Electron.
 - **Swappable models.** Models are listed in a manifest, not hard-coded, so improving or replacing one is a data change.
 - **Open source (MIT).** Read it, fork it, improve it.
@@ -66,7 +66,8 @@ These show the interface running against the built-in sample-data backend (see [
 | **Markdown export**: **Copy Markdown** or **Export Markdown** (a `.md` file in the app's `exports` folder) with title, date, duration, goals, notes and the transcript (You / Others when both sides were recorded) | Working |
 | Meetings list, rename, delete (audio is deleted with the meeting), WAV export | Working |
 | **A calmer layout**: while recording, a *live screen* (transcript on the left; on the right the hint button, the automatic-hints menu, the current hint and the meeting goals). After recording, a *review page* with tabs **Notes / Transcript / Goals**, and a **⋯** menu for the rarer actions (copy or export Markdown, export audio, re-transcribe, delete). Everything you set up once is in one **Settings** dialog (gear, or Ctrl/Cmd+,). The sidebar is only meetings, search and a one-line model status | Working in the mock-backend UI checks; not yet used on real hardware |
-| **Choose the model for each job** (closes [#8](https://github.com/nareshipme/Meetesh/issues/8)): speech to text (Whisper Tiny, Base, Small compact), hints (Gemma 3 1B, Gemma 4 E2B, Gemma 3 4B) and meeting notes and titles (same as hints, or another model, e.g. a bigger one since it runs in the background). Choices are remembered; a model that is not installed shows its download in the same box; a model nobody uses any more is released from memory | Selection logic unit-tested; see "Model choices" below for what was measured |
+| **Choose the model for each job** (closes [#8](https://github.com/nareshipme/Meetesh/issues/8)): speech to text (Whisper Tiny, Base, Small compact, or Parakeet TDT 0.6B v3), hints (Gemma 3 1B, Gemma 4 E2B, Gemma 3 4B) and meeting notes and titles (same as hints, or another model, e.g. a bigger one since it runs in the background). Choices are remembered; a model that is not installed shows its download in the same box; a model nobody uses any more is released from memory | Selection logic unit-tested; see "Model choices" below for what was measured |
+| **Parakeet speech engine** (second engine next to Whisper): NVIDIA Parakeet TDT 0.6B v3, int8, 670 MB in a folder of three files. It writes punctuation and capitals, detects the language itself (25 European languages; **not** Hindi or other Indian languages) and is several times faster than Whisper Small on CPU. Whisper stays the default | Real model run in a Linux sandbox (see "Model choices"); not yet tried on a real call, macOS or Windows ([docs/VERIFICATION.md](docs/VERIFICATION.md)) |
 | Responsive, dark-mode-aware UI | Working |
 
 What a person has actually tried on real hardware, and what only has automated checks, is tracked in [docs/VERIFICATION.md](docs/VERIFICATION.md).
@@ -174,6 +175,11 @@ Each job picks its own model in **Settings**. What we measured on a 4-core CPU w
 | Whisper Base (English), the default | 148 MB | 18.4% | 14.1% | 288 s |
 | Whisper Base, 5-bit | 60 MB | 21.0% | 15.4% | 261 s (not offered: smaller but not faster) |
 | Whisper Small (English, compact) | 190 MB | 15.4% | 10.4% | 854 s (measured while other work ran, so roughly 2.5 to 3 times Base) |
+| Parakeet TDT 0.6B v3 (int8, 25 European languages) | 670 MB | 17.7% | 15.7% | 47 s |
+
+Speed, measured separately with nothing else running (`report_speed` in the bench: 26 s of speech, one warm-up pass first): Parakeet **14 to 16 times faster than real time**, Whisper Tiny 7.2x, Whisper Base 3.5x, Whisper Small (compact) 0.9x, which is slower than real time on 4 cores, so while recording it could fall behind.
+
+How to read the Parakeet row: its mean is pulled up by one scenario. On the six ordinary scenarios (clean, quiet, noisy, rushed, trailing off, hum) it made about 9% word errors live and 9% on the whole file, against 12 to 29% for Whisper Base; it also adds punctuation and capital letters itself. On the very faint, distant microphone scenario (speech at -48 dB, noise at -58 dB) it did clearly worse: 69% live and 58% whole, against 24% and 21% for Whisper Base. So Parakeet looks better for normal laptop microphones and worse for a very quiet or far-away one. This is machine-made speech and one 62-word script, so the differences are indicative only; confirming on real voices is on the checklist in [docs/VERIFICATION.md](docs/VERIFICATION.md). It is not the default: Whisper Base stays the default until someone has tried both on real calls.
 
 **Language models** (same scripted 11-line call and 176-line meeting for all):
 
@@ -241,6 +247,15 @@ MEETESH_TEST_MODEL=/path/to/ggml-base.en.bin \
 # one change at a time (old behaviour, each feature alone, everything):
 MEETESH_ABLATION=1 MEETESH_TEST_MODEL=... cargo test -p meetesh-core --features whisper --test asr_quality ablation -- --nocapture
 ```
+
+For Parakeet the same bench runs against a folder with `encoder-model.int8.onnx`, `decoder_joint-model.int8.onnx` and `vocab.txt` (the app downloads these for you into `models/parakeet-tdt-0.6b-v3-int8/`):
+
+```bash
+MEETESH_TEST_PARAKEET=/path/to/folder cargo test --release -p meetesh-core --features parakeet --test asr_quality -- --nocapture
+MEETESH_TEST_PARAKEET=/path/to/folder cargo test --release -p meetesh-core --features parakeet --test parakeet_real -- --nocapture
+```
+
+The Parakeet engine is a default feature of the app (`parakeet`): the build downloads a prebuilt ONNX Runtime from the `ort` project's CDN and links it in, so nothing extra has to be installed or shipped. On a machine that cannot download it (offline, or a locked-down network), use `--features parakeet-dynamic` instead and point `ORT_DYLIB_PATH` at an ONNX Runtime library (for example the one inside the `onnxruntime` Python wheel); `cargo build -p meetesh --no-default-features` builds the app without Parakeet, and the model is then simply not offered.
 
 The speech is synthetic, so it checks the audio handling and says nothing about Whisper's accuracy on real voices. Numbers vary by a few words between runs of different settings, so compare more than one model before trusting a small difference.
 

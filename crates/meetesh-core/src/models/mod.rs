@@ -21,6 +21,38 @@ pub enum Role {
     Summary,
 }
 
+/// Which speech engine runs an ASR model. Language models are always llama.cpp.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Engine {
+    /// whisper.cpp (a single ggml file).
+    #[default]
+    Whisper,
+    /// NVIDIA Parakeet on ONNX Runtime (a folder of files; `file_name` is the main one).
+    Parakeet,
+}
+
+impl Engine {
+    /// Whether this build of the app can run the engine. Whisper is the baseline; Parakeet is a
+    /// build option (`parakeet` feature), so a build without it must not offer Parakeet models.
+    pub fn is_built_in(self) -> bool {
+        match self {
+            Engine::Whisper => true,
+            Engine::Parakeet => cfg!(feature = "parakeet-engine"),
+        }
+    }
+}
+
+/// A small file that travels with a model's main file (for example the vocabulary). It is stored
+/// next to the main file, so the model is a folder.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Companion {
+    pub file_name: String,
+    pub url: String,
+    pub sha256: String,
+    pub size_bytes: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ModelEntry {
     pub id: String,
@@ -38,6 +70,39 @@ pub struct ModelEntry {
     pub language: String,
     #[serde(default)]
     pub min_ram_mb: u32,
+    /// Speech engine (ASR models only). Defaults to Whisper.
+    #[serde(default)]
+    pub engine: Engine,
+    /// Extra files stored beside `file_name`. Empty for single-file models.
+    #[serde(default)]
+    pub companions: Vec<Companion>,
+}
+
+impl ModelEntry {
+    /// Everything that must be downloaded: the main file plus companions.
+    pub fn total_bytes(&self) -> u64 {
+        self.size_bytes + self.companions.iter().map(|c| c.size_bytes).sum::<u64>()
+    }
+
+    /// Folder holding the model's files, relative to the models directory (`""` for a loose file).
+    pub fn folder(&self) -> &str {
+        self.file_name.rsplit_once('/').map_or("", |(dir, _)| dir)
+    }
+}
+
+/// A file name that stays inside the models directory: relative, at most one sub-folder.
+fn safe_file_name(n: &str) -> bool {
+    !n.is_empty()
+        && !n.contains('\\')
+        && !n.contains("..")
+        && !n.starts_with('/')
+        && n.split('/').count() <= 2
+        && n.split('/').all(|part| !part.is_empty())
+}
+
+/// Checksums are 64 hex digits.
+fn valid_sha(s: &str) -> bool {
+    s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -71,11 +136,17 @@ impl Manifest {
             if self.models.iter().filter(|o| o.id == e.id).count() > 1 {
                 return Err(Error::Other(format!("duplicate model id {}", e.id)));
             }
-            if e.sha256.len() != 64 || !e.sha256.chars().all(|c| c.is_ascii_hexdigit()) {
+            if !valid_sha(&e.sha256) || e.companions.iter().any(|c| !valid_sha(&c.sha256)) {
                 return Err(Error::Other(format!("model {} has an invalid sha256", e.id)));
             }
-            if e.file_name.contains('/') || e.file_name.contains('\\') || e.file_name.contains("..") {
+            if !safe_file_name(&e.file_name) || e.companions.iter().any(|c| !safe_file_name(&c.file_name)) {
                 return Err(Error::Other(format!("model {} has an unsafe file name", e.id)));
+            }
+            if e.companions.iter().any(|c| c.file_name.rsplit_once('/').map_or("", |(d, _)| d) != e.folder()) {
+                return Err(Error::Other(format!("model {}: companion files must sit beside the main file", e.id)));
+            }
+            if e.engine == Engine::Parakeet && e.role != Role::Asr {
+                return Err(Error::Other(format!("model {}: only speech models can use the Parakeet engine", e.id)));
             }
         }
         for (profile, roles) in &self.defaults {
@@ -141,5 +212,45 @@ mod tests {
         assert!(Manifest::parse(&mutated(|v| v["models"][1]["id"] = v["models"][0]["id"].clone())).is_err());
         // not JSON
         assert!(Manifest::parse("{").is_err());
+    }
+
+    #[test]
+    fn the_parakeet_model_is_a_folder_of_pinned_files() {
+        let m = Manifest::bundled();
+        let p = m.get("parakeet-tdt-0.6b-v3-int8").unwrap();
+        assert_eq!(p.engine, Engine::Parakeet);
+        assert_eq!(p.role, Role::Asr);
+        assert_eq!(p.folder(), "parakeet-tdt-0.6b-v3-int8");
+        assert_eq!(p.companions.len(), 2);
+        assert_eq!(p.total_bytes(), 652_183_999 + 18_202_004 + 93_939);
+        // pinned to a revision, never a moving branch
+        assert!(p.url.contains("/resolve/8f23f0c0") && p.companions.iter().all(|c| c.url.contains("/resolve/8f23f0c0")));
+        // Whisper models are single files on the default engine
+        assert!(m.get("whisper-base.en").unwrap().companions.is_empty());
+        assert_eq!(m.get("whisper-base.en").unwrap().engine, Engine::Whisper);
+    }
+
+    #[test]
+    fn a_build_without_parakeet_does_not_offer_it() {
+        let m = Manifest::bundled();
+        let offered = selection::choices(&m, Profile::Desktop, Role::Asr).iter().any(|e| e.engine == Engine::Parakeet);
+        assert_eq!(offered, cfg!(feature = "parakeet-engine"));
+        // and a stored choice of it is ignored in such a build
+        let r = selection::resolve(&m, Profile::Desktop, Role::Asr, |_| Some("parakeet-tdt-0.6b-v3-int8".into())).unwrap();
+        assert_eq!(r.id == "parakeet-tdt-0.6b-v3-int8", cfg!(feature = "parakeet-engine"));
+    }
+
+    #[test]
+    fn rejects_unsafe_or_misplaced_companions() {
+        let with = |f: &dyn Fn(&mut serde_json::Value)| mutated(|v| {
+            let i = v["models"].as_array().unwrap().iter().position(|m| m["id"] == "parakeet-tdt-0.6b-v3-int8").unwrap();
+            f(&mut v["models"][i]);
+        });
+        assert!(Manifest::parse(&with(&|_| {})).is_ok());
+        assert!(Manifest::parse(&with(&|m| m["companions"][0]["file_name"] = "../vocab.txt".into())).is_err());
+        assert!(Manifest::parse(&with(&|m| m["companions"][0]["file_name"] = "elsewhere/vocab.txt".into())).is_err());
+        assert!(Manifest::parse(&with(&|m| m["companions"][0]["file_name"] = "a/b/vocab.txt".into())).is_err());
+        assert!(Manifest::parse(&with(&|m| m["companions"][0]["sha256"] = "zz".into())).is_err());
+        assert!(Manifest::parse(&with(&|m| m["role"] = "assist".into())).is_err());
     }
 }

@@ -23,7 +23,7 @@ pub fn kind_of(slot: Role) -> Role {
 /// The model a slot uses: the stored choice if it is valid, else the default. For the notes slot
 /// the default is whatever the hints slot uses.
 pub fn resolve<'a>(manifest: &'a Manifest, profile: Profile, slot: Role, stored: impl Fn(Role) -> Option<String>) -> Option<&'a ModelEntry> {
-    let valid = |id: &str| manifest.get(id).filter(|m| m.role == kind_of(slot));
+    let valid = |id: &str| manifest.get(id).filter(|m| m.role == kind_of(slot) && m.engine.is_built_in());
     if let Some(m) = stored(slot).as_deref().and_then(valid) {
         return Some(m);
     }
@@ -40,7 +40,7 @@ pub fn choices<'a>(manifest: &'a Manifest, profile: Profile, slot: Role) -> Vec<
     if manifest.default_for(profile, kind).is_none() {
         return vec![];
     }
-    manifest.by_role(kind).collect()
+    manifest.by_role(kind).filter(|m| m.engine.is_built_in()).collect()
 }
 
 #[cfg(test)]
@@ -88,7 +88,8 @@ mod tests {
     fn choices_are_the_models_of_the_right_kind() {
         let m = Manifest::bundled();
         let ids = |slot| choices(&m, Profile::Desktop, slot).iter().map(|e| e.id.clone()).collect::<Vec<_>>();
-        assert!(ids(Role::Asr).len() >= 3 && ids(Role::Asr).iter().all(|i| i.starts_with("whisper")));
+        assert!(ids(Role::Asr).iter().filter(|i| i.starts_with("whisper")).count() >= 3);
+        assert!(ids(Role::Asr).iter().all(|i| i.starts_with("whisper") || i.starts_with("parakeet")));
         assert_eq!(ids(Role::Assist), ids(Role::Summary), "the same language models serve hints and notes");
         assert!(ids(Role::Assist).len() >= 2);
         assert!(choices(&m, Profile::Mobile, Role::Assist).is_empty());

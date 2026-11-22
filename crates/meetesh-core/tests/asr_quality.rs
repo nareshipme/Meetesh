@@ -3,10 +3,13 @@
 //! Opt-in (needs a Whisper model):
 //!   MEETESH_TEST_MODEL=/path/ggml-base.en.bin \
 //!     cargo test -p meetesh-core --features whisper --test asr_quality -- --nocapture
+//! or, for Parakeet (a folder with the three model files; ONNX Runtime library via ORT_DYLIB_PATH):
+//!   MEETESH_TEST_PARAKEET=/path/to/folder ORT_DYLIB_PATH=/path/libonnxruntime.so \
+//!     cargo test -p meetesh-core --features parakeet-dynamic --test asr_quality -- --nocapture
 //!
 //! IMPORTANT: the speech is synthetic (espeak-ng). It exercises volume handling, noise, pauses and
 //! chunking, but says nothing about Whisper's accuracy on real voices.
-#![cfg(feature = "whisper")]
+#![cfg(any(feature = "whisper", feature = "parakeet-engine"))]
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -14,7 +17,7 @@ use std::sync::atomic::AtomicBool;
 use meetesh_core::asr::chunker::{Chunker, ChunkerConfig};
 use meetesh_core::asr::live::live_chunker_config;
 use meetesh_core::asr::run::{transcribe_chunk, transcribe_recording_with};
-use meetesh_core::asr::whisper::WhisperTranscriber;
+use meetesh_core::asr::Transcriber;
 use meetesh_core::audio::wav::{read_segment, SegmentWriter};
 
 const SENTENCES: [&str; 6] = [
@@ -172,7 +175,7 @@ fn wer(reference: &str, hypothesis: &str) -> Wer {
 // ---------- pipelines under test ----------
 
 /// The live path: VAD chunks, each transcribed on its own.
-fn run_live(t: &WhisperTranscriber, cfg: ChunkerConfig, audio: &[f32]) -> String {
+fn run_live(t: &dyn Transcriber, cfg: ChunkerConfig, audio: &[f32]) -> String {
     let mut chunker = Chunker::new(cfg);
     let mut chunks = vec![];
     for piece in audio.chunks(1600) {
@@ -183,7 +186,7 @@ fn run_live(t: &WhisperTranscriber, cfg: ChunkerConfig, audio: &[f32]) -> String
 }
 
 /// The "Re-transcribe" path over the saved recording.
-fn run_whole(t: &WhisperTranscriber, cfg: ChunkerConfig, audio: &[f32], tag: &str) -> String {
+fn run_whole(t: &dyn Transcriber, cfg: ChunkerConfig, audio: &[f32], tag: &str) -> String {
     let dir = std::env::temp_dir().join(format!("meetesh-q-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let mut w = SegmentWriter::new(&dir).unwrap();
@@ -194,8 +197,17 @@ fn run_whole(t: &WhisperTranscriber, cfg: ChunkerConfig, audio: &[f32], tag: &st
     segs.into_iter().map(|s| s.text).collect::<Vec<_>>().join(" ")
 }
 
-fn model() -> Option<PathBuf> {
-    std::env::var_os("MEETESH_TEST_MODEL").map(PathBuf::from)
+/// The engine under test, chosen by which environment variable is set (None: skip).
+fn engine() -> Option<Box<dyn Transcriber>> {
+    #[cfg(feature = "parakeet-engine")]
+    if let Some(dir) = std::env::var_os("MEETESH_TEST_PARAKEET").map(PathBuf::from) {
+        return Some(Box::new(meetesh_core::asr::parakeet::ParakeetTranscriber::load("quality", &dir).unwrap()));
+    }
+    #[cfg(feature = "whisper")]
+    if let Some(path) = std::env::var_os("MEETESH_TEST_MODEL").map(PathBuf::from) {
+        return Some(Box::new(meetesh_core::asr::whisper::WhisperTranscriber::load("quality", &path, Some("en")).unwrap()));
+    }
+    None
 }
 
 fn scenarios() -> Vec<Scenario> {
@@ -223,16 +235,16 @@ fn live_old() -> ChunkerConfig {
 /// microphone must not be lost. The old fixed threshold lost every word of this scenario.
 #[test]
 fn faint_far_microphone_speech_is_not_lost() {
-    let Some(path) = model() else {
-        eprintln!("MEETESH_TEST_MODEL not set; skipping");
+    let Some(t) = engine() else {
+        eprintln!("MEETESH_TEST_MODEL / MEETESH_TEST_PARAKEET not set; skipping");
         return;
     };
-    let t = WhisperTranscriber::load("quality", &path, Some("en")).unwrap();
+    let t = &*t;
     let reference = SENTENCES.join(" ");
     let far = scenarios().into_iter().find(|s| s.name.starts_with("far mic")).unwrap();
     let audio = compose(&far);
-    let old = wer(&reference, &run_live(&t, live_old(), &audio));
-    let new = wer(&reference, &run_live(&t, live_new(), &audio));
+    let old = wer(&reference, &run_live(t, live_old(), &audio));
+    let new = wer(&reference, &run_live(t, live_new(), &audio));
     eprintln!("far mic, live: old {} | new {}", cell(old), cell(new));
     assert!(old.del > 30, "the old fixed threshold used to lose nearly everything; it lost {}", old.del);
     assert!(new.del <= 6, "faint speech is being lost again: {} of {} words missing", new.del, new.reference);
@@ -245,22 +257,22 @@ fn cell(w: Wer) -> String {
 
 #[test]
 fn report_words_lost_per_scenario() {
-    let Some(path) = model() else {
-        eprintln!("MEETESH_TEST_MODEL not set; skipping");
+    let Some(t) = engine() else {
+        eprintln!("MEETESH_TEST_MODEL / MEETESH_TEST_PARAKEET not set; skipping");
         return;
     };
-    let t = WhisperTranscriber::load("quality", &path, Some("en")).unwrap();
+    let t = &*t;
     let reference = SENTENCES.join(" ");
     eprintln!("\nreference words: {}. Cells show word error rate and (missing words).\n", words(&reference).len());
     eprintln!("{:<38} {:^23} {:^23}", "", "live (while recording)", "whole file (Re-transcribe)");
     eprintln!("{:<38} {:>11} {:>11} {:>11} {:>11}", "scenario", "old", "new", "old", "new");
     for s in scenarios() {
         let audio = compose(&s);
-        let lo = wer(&reference, &run_live(&t, live_old(), &audio));
-        let ln_text = run_live(&t, live_new(), &audio);
+        let lo = wer(&reference, &run_live(t, live_old(), &audio));
+        let ln_text = run_live(t, live_new(), &audio);
         let ln = wer(&reference, &ln_text);
-        let wo = wer(&reference, &run_whole(&t, ChunkerConfig::legacy(), &audio, "o"));
-        let wn = wer(&reference, &run_whole(&t, ChunkerConfig::default(), &audio, "n"));
+        let wo = wer(&reference, &run_whole(t, ChunkerConfig::legacy(), &audio, "o"));
+        let wn = wer(&reference, &run_whole(t, ChunkerConfig::default(), &audio, "n"));
         eprintln!("{:<38} {:>11} {:>11} {:>11} {:>11}", s.name, cell(lo), cell(ln), cell(wo), cell(wn));
         eprintln!("    new live heard: {ln_text}");
     }
@@ -270,11 +282,11 @@ fn report_words_lost_per_scenario() {
 ///   MEETESH_TEST_MODEL=... MEETESH_ABLATION=1 cargo test ... --test asr_quality ablation -- --nocapture
 #[test]
 fn ablation_live_path_one_change_at_a_time() {
-    let Some(path) = model() else { return };
+    let Some(t) = engine() else { return };
     if std::env::var_os("MEETESH_ABLATION").is_none() {
         return;
     }
-    let t = WhisperTranscriber::load("quality", &path, Some("en")).unwrap();
+    let t = &*t;
     let reference = SENTENCES.join(" ");
     let base = live_old();
     let new = live_new();
@@ -311,11 +323,27 @@ fn ablation_live_path_one_change_at_a_time() {
         let mut row = format!("{name:<34}");
         let (mut errs, mut del) = (0usize, 0usize);
         for audio in &audios {
-            let w = wer(&reference, &run_live(&t, cfg.clone(), audio));
+            let w = wer(&reference, &run_live(t, cfg.clone(), audio));
             errs += w.sub + w.del + w.ins;
             del += w.del;
             row.push_str(&format!(" {:>12}", cell(w)));
         }
         eprintln!("ABL {row}   {errs:>3} errors, {del} missing");
     }
+}
+
+/// How fast the engine is: seconds of audio per second of work, on the six test sentences (one
+/// warm-up pass first). Only informational; machines differ.
+#[test]
+fn report_speed() {
+    let Some(t) = engine() else { return };
+    let clips: Vec<Vec<f32>> = (0..6).map(fixture).collect();
+    let audio_s: f32 = clips.iter().map(|c| c.len() as f32 / 16_000.0).sum();
+    t.transcribe(&clips[0]).unwrap(); // warm-up
+    let start = std::time::Instant::now();
+    for c in &clips {
+        t.transcribe(c).unwrap();
+    }
+    let took = start.elapsed().as_secs_f32();
+    eprintln!("speed: {audio_s:.1} s of speech in {took:.2} s = {:.1}x real time", audio_s / took);
 }
