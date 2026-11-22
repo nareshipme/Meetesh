@@ -331,6 +331,19 @@ impl Db {
         )?)
     }
 
+    /// The day of a unix timestamp for people: "Mon 16 Nov" (with the year when it is not this year).
+    pub fn day_label(&self, ts: i64) -> Result<String> {
+        Ok(self.conn.query_row(
+            "SELECT substr('SunMonTueWedThuFriSat', CAST(strftime('%w', ?1, 'unixepoch', 'localtime') AS INTEGER) * 3 + 1, 3) || ' ' ||
+                    CAST(strftime('%d', ?1, 'unixepoch', 'localtime') AS INTEGER) || ' ' ||
+                    substr('JanFebMarAprMayJunJulAugSepOctNovDec', (CAST(strftime('%m', ?1, 'unixepoch', 'localtime') AS INTEGER) - 1) * 3 + 1, 3) ||
+                    CASE WHEN strftime('%Y', ?1, 'unixepoch', 'localtime') = strftime('%Y', 'now', 'localtime') THEN ''
+                         ELSE ' ' || strftime('%Y', ?1, 'unixepoch', 'localtime') END",
+            params![ts],
+            |r| r.get(0),
+        )?)
+    }
+
     pub fn get_setting(&self, key: &str) -> Result<Option<String>> {
         Ok(self
             .conn

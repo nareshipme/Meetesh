@@ -44,6 +44,7 @@ fn streams_a_useful_hint_and_can_be_cancelled() {
     let rss_loaded = rss_mb();
 
     let ctx = HintContext {
+        related: vec![],
         agenda: "Decide the launch date. Confirm who owns the pricing page.".into(),
         recent: vec![
             seg(5_000, "So the design is basically done, we are just waiting on legal for the terms page."),
@@ -128,6 +129,7 @@ fn reports_load_progress_warms_up_and_recovers_from_a_gpu_failure() {
     a.simulate_gpu_failure_once();
     assert!(a.uses_gpu(), "the hook pretends the GPU is in use");
     let ctx = HintContext {
+        related: vec![],
         agenda: String::new(),
         recent: vec![seg(1_000, "Can you send me the report by Friday?")],
     };

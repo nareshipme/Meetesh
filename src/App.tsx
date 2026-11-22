@@ -113,6 +113,7 @@ export default function App() {
             onConsentClosed={onConsentClosed}
             onChange={refresh}
             onOpenSettings={openSettings}
+            onOpenMeeting={setSelectedId}
             onBack={() => setSelectedId(null)}
             onDeleted={() => {
               setSelectedId(null);

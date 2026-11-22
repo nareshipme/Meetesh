@@ -93,6 +93,8 @@ pub struct HintPieceEvent {
 
 #[derive(Serialize, Clone)]
 pub struct HintDoneEvent {
+    /// Earlier meetings whose notes were shown to the model for this hint.
+    pub sources: Vec<HintSource>,
     /// Why an automatic hint was offered ("question" or "pause"); `None` for a hint the user asked for.
     pub trigger: Option<&'static str>,
     pub meeting_id: i64,
@@ -126,4 +128,13 @@ pub struct SummaryEvent {
     pub finished: bool,
     pub cancelled: bool,
     pub error: Option<String>,
+}
+
+/// An earlier meeting that a hint had in front of it.
+#[derive(Serialize, Clone)]
+pub struct HintSource {
+    pub meeting_id: i64,
+    pub title: String,
+    /// "Mon 16 Nov"
+    pub day: String,
 }

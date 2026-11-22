@@ -39,7 +39,7 @@ fn whisper_then_llm_in_one_process() {
     eprintln!("whisper heard: {:?}", segs.iter().map(|s| s.text.as_str()).collect::<Vec<_>>());
 
     let a = LlamaAssistant::load("assist", &llm, 4096).unwrap();
-    let msgs = build_hint_messages(&HintContext { agenda: String::new(), recent: segs.clone() }, Budget::default());
+    let msgs = build_hint_messages(&HintContext { related: vec![], agenda: String::new(), recent: segs.clone() }, Budget::default());
     let out = a.complete(&msgs, &GenOptions::hint(Arc::new(AtomicBool::new(false))), &mut |_| true).unwrap();
     eprintln!("assist said: {:?}", out.text);
     assert!(!out.text.is_empty());

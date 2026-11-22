@@ -1,19 +1,48 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
+use meetesh_core::assist::memory::{keywords, plain_excerpt, Related};
 use meetesh_core::assist::prompt::{build_hint_messages, clean_hint, recent_window, Budget, HintContext};
+use meetesh_core::db::MatchKind;
 use meetesh_core::assist::trigger::{AutoHintMode, Trigger};
 use meetesh_core::assist::{Assistant, GenOptions};
 use meetesh_core::{Error, Result};
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use crate::events::{HintDoneEvent, HintPieceEvent, HINT_DONE, HINT_PIECE};
+use crate::events::{HintDoneEvent, HintPieceEvent, HintSource, HINT_DONE, HINT_PIECE};
 use crate::state::{get_assistant, AppState, HintJob};
 
 /// How much of the recent conversation a hint is based on.
 const CONTEXT_WINDOW_MS: i64 = 3 * 60 * 1000;
 
 static NEXT_HINT_ID: AtomicU64 = AtomicU64::new(1);
+
+/// Up to three earlier meetings that talk about what was just said, each with one short excerpt (its
+/// notes if they match, else a transcript line). Best effort: a search problem means no memory, not
+/// no hint.
+fn earlier_meetings(st: &AppState, meeting_id: i64, recent: &[meetesh_core::TranscriptSegment]) -> Vec<(Related, i64)> {
+    let words = keywords(recent, 4);
+    let db = st.db.lock().unwrap();
+    let Ok(found) = db.related(meeting_id, &words, 3) else { return vec![] };
+    found
+        .into_iter()
+        .filter_map(|r| {
+            let pick = r
+                .matches
+                .iter()
+                .find(|m| m.kind == MatchKind::Notes)
+                .or_else(|| r.matches.iter().find(|m| m.kind == MatchKind::Transcript))
+                .or_else(|| r.matches.first())?;
+            let related = Related {
+                meeting_id: r.meeting_id,
+                title: r.title.clone(),
+                day: db.day_label(r.created_at).unwrap_or_default(),
+                excerpt: plain_excerpt(&pick.snippet, 240),
+            };
+            Some((related, r.created_at))
+        })
+        .collect()
+}
 
 /// Ask the on-device model for a short hint based on the last few minutes of the meeting.
 /// Returns immediately with a hint id; text streams via `hint-piece`, then `hint-done`.
@@ -47,6 +76,7 @@ pub fn start_hint(app: &AppHandle, meeting_id: i64, trigger: Option<Trigger>) ->
     std::thread::spawn(move || {
         let _interactive = interactive;
         let st = app.state::<AppState>();
+        let mut sources: Vec<HintSource> = Vec::new();
         let outcome = (|| -> Result<meetesh_core::assist::Completion> {
             let assistant = get_assistant(&app)?; // first use loads the model (a few seconds)
             let segments = st.db.lock().unwrap().get_transcript(meeting_id)?;
@@ -54,7 +84,11 @@ pub fn start_hint(app: &AppHandle, meeting_id: i64, trigger: Option<Trigger>) ->
             if recent.is_empty() {
                 return Err(Error::Other("Nothing has been said yet".into()));
             }
-            let messages = build_hint_messages(&HintContext { agenda: meeting.agenda, recent }, Budget::default());
+            // What earlier meetings said about the same things (keyword search in the local index).
+            let related = earlier_meetings(&st, meeting_id, &recent);
+            sources = related.iter().map(|(r, _)| HintSource { meeting_id: r.meeting_id, title: r.title.clone(), day: r.day.clone() }).collect();
+            let related: Vec<Related> = related.into_iter().map(|(r, _)| r).collect();
+            let messages = build_hint_messages(&HintContext { agenda: meeting.agenda, recent, related }, Budget::default());
             let mut so_far = String::new();
             // Let live transcription go first: the hint pauses while transcription work is pending.
             let opts = GenOptions::hint(cancel.clone()).yielding_to(st.asr_pending.clone());
@@ -83,6 +117,7 @@ pub fn start_hint(app: &AppHandle, meeting_id: i64, trigger: Option<Trigger>) ->
                     log::warn!("GPU failure reason: {reason}");
                 }
                 HintDoneEvent {
+                    sources,
                     trigger,
                     meeting_id,
                     hint_id,
@@ -98,7 +133,7 @@ pub fn start_hint(app: &AppHandle, meeting_id: i64, trigger: Option<Trigger>) ->
             }
             Err(e) => {
                 log::warn!("hint failed: {e}");
-                HintDoneEvent { trigger, meeting_id, hint_id, text: None, cancelled: false, error: Some(e.to_string()), first_token_ms: 0, total_ms: 0, tokens: 0, on_gpu: false, cpu_fallback: false }
+                HintDoneEvent { sources: vec![], trigger, meeting_id, hint_id, text: None, cancelled: false, error: Some(e.to_string()), first_token_ms: 0, total_ms: 0, tokens: 0, on_gpu: false, cpu_fallback: false }
             }
         };
         let _ = app.emit(HINT_DONE, done);

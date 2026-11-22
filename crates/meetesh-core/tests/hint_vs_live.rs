@@ -37,6 +37,7 @@ fn speech() -> Vec<f32> {
 fn canned_context() -> HintContext {
     let seg = |start_ms: i64, text: &str| TranscriptSegment::new(start_ms, start_ms + 3000, text);
     HintContext {
+        related: vec![],
         agenda: "Decide the launch date. Confirm who owns pricing.".into(),
         recent: vec![
             seg(2_000, "Let's start with the launch date. Engineering thinks the fifteenth is realistic."),

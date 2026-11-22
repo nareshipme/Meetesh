@@ -27,6 +27,8 @@ interface Props {
   onBack: () => void;
   onDeleted: () => void;
   onOpenSettings: () => void;
+  /** Open another meeting (used by hints that point at an earlier one). */
+  onOpenMeeting: (id: number) => void;
 }
 
 type TabId = "notes" | "transcript" | "goals";
@@ -180,7 +182,7 @@ export default function MeetingView(props: Props) {
 type TranscriptState = ReturnType<typeof useTranscript>;
 
 /** While recording: the transcript fills the left, hints and goals sit in a column on the right. */
-function LiveView({ meeting, modelReady, assistReady, assistLoad, notify, onChange, onOpenSettings, autoConsent, onConsentClosed, transcript, labelled }: Props & { transcript: TranscriptState; labelled: boolean }) {
+function LiveView({ meeting, modelReady, assistReady, assistLoad, notify, onChange, onOpenSettings, onOpenMeeting, autoConsent, onConsentClosed, transcript, labelled }: Props & { transcript: TranscriptState; labelled: boolean }) {
   const hint = useHint(meeting.id, notify);
   const auto = useAutoHints(notify);
   const assistLoading = assistLoad?.state === "loading" || assistLoad?.state === "warming";
@@ -222,7 +224,7 @@ function LiveView({ meeting, modelReady, assistReady, assistLoad, notify, onChan
           empty={modelReady ? "Listening… text appears here a few seconds after you speak." : "Download the speech model (Settings) to see live text while recording."}
         />
       </div>
-      <LiveAssist meeting={meeting} hint={hint} auto={auto} assistReady={assistReady} hintBlockedReason={blocked} notify={notify} onChange={onChange} onOpenSettings={onOpenSettings} />
+      <LiveAssist meeting={meeting} hint={hint} auto={auto} assistReady={assistReady} hintBlockedReason={blocked} notify={notify} onChange={onChange} onOpenSettings={onOpenSettings} onOpenMeeting={onOpenMeeting} />
     </div>
   );
 }

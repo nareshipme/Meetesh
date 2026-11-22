@@ -1,6 +1,7 @@
 //! Builds the model input for a hint. Pure functions, no model needed, so prompt behavior is
 //! unit-tested and easy to iterate on.
 
+use crate::assist::memory::Related;
 use crate::assist::{ChatMessage, ChatRole};
 use crate::{Source, TranscriptSegment};
 
@@ -21,6 +22,8 @@ pub struct HintContext {
     pub agenda: String,
     /// Recent transcript, oldest first.
     pub recent: Vec<TranscriptSegment>,
+    /// What earlier meetings said about the same things (see `assist::memory`). Empty means none.
+    pub related: Vec<Related>,
 }
 
 /// Limits that keep the prompt inside the model's context window. Roughly 4 characters per token.
@@ -28,12 +31,14 @@ pub struct HintContext {
 pub struct Budget {
     pub max_transcript_chars: usize,
     pub max_agenda_chars: usize,
+    /// Excerpts from earlier meetings, in total.
+    pub max_related_chars: usize,
 }
 
 impl Default for Budget {
     fn default() -> Self {
         // About 1,500 tokens of transcript plus 400 of agenda: leaves room for the reply in a 4k context.
-        Budget { max_transcript_chars: 6_000, max_agenda_chars: 1_600 }
+        Budget { max_transcript_chars: 6_000, max_agenda_chars: 1_600, max_related_chars: 1_100 }
     }
 }
 
@@ -109,6 +114,19 @@ pub(crate) fn truncate_chars(s: &str, max: usize) -> &str {
     &s[..end]
 }
 
+/// The excerpts as `- [Mon 16 Nov, "Budget review"] text` lines, whole lines only, within `max_chars`.
+fn related_block(related: &[Related], max_chars: usize) -> String {
+    let mut out = String::new();
+    for r in related {
+        let line = format!("- [{}, \"{}\"] {}\n", r.day, r.title.trim(), r.excerpt);
+        if !out.is_empty() && out.len() + line.len() > max_chars {
+            break;
+        }
+        out.push_str(&line);
+    }
+    out.trim_end().to_string()
+}
+
 pub fn build_hint_messages(ctx: &HintContext, budget: Budget) -> Vec<ChatMessage> {
     let mut user = String::new();
     let agenda = ctx.agenda.trim();
@@ -119,12 +137,20 @@ pub fn build_hint_messages(ctx: &HintContext, budget: Budget) -> Vec<ChatMessage
     }
     user.push_str("Transcript so far (most recent last):\n");
     user.push_str(&transcript_tail(&ctx.recent, budget.max_transcript_chars));
+    let related = related_block(&ctx.related, budget.max_related_chars);
+    if !related.is_empty() {
+        user.push_str("\n\nNotes from earlier meetings that may be relevant (use them only if they clearly matter to what was just said, and say which meeting they come from):\n");
+        user.push_str(&related);
+    }
     user.push_str("\n\nWhat should I say or ask next?");
-    let system = if has_others(&ctx.recent) {
+    let mut system = if has_others(&ctx.recent) {
         SYSTEM_PROMPT.replace("The transcript has no speaker names and may contain recognition mistakes.", SPEAKER_NOTE)
     } else {
         SYSTEM_PROMPT.to_string()
     };
+    if !ctx.related.is_empty() {
+        system.push_str(" You may also be given short notes from earlier meetings: only use one if it clearly bears on what was just said, and name the meeting it came from. Never present it as something said in this meeting.");
+    }
     vec![ChatMessage::new(ChatRole::System, system), ChatMessage::new(ChatRole::User, user)]
 }
 
@@ -209,7 +235,7 @@ mod tests {
 
     #[test]
     fn messages_have_system_then_user_and_include_agenda_only_when_present() {
-        let ctx = HintContext { agenda: "  Decide the launch date  ".into(), recent: vec![seg(0, "When can we launch?")] };
+        let ctx = HintContext { agenda: "  Decide the launch date  ".into(), recent: vec![seg(0, "When can we launch?")], related: vec![] };
         let m = build_hint_messages(&ctx, Budget::default());
         assert_eq!(m.len(), 2);
         assert_eq!(m[0].role, ChatRole::System);
@@ -224,8 +250,8 @@ mod tests {
 
     #[test]
     fn long_agenda_is_truncated_on_a_char_boundary() {
-        let ctx = HintContext { agenda: "é".repeat(5_000), recent: vec![seg(0, "x")] };
-        let m = build_hint_messages(&ctx, Budget { max_transcript_chars: 100, max_agenda_chars: 101 });
+        let ctx = HintContext { agenda: "é".repeat(5_000), recent: vec![seg(0, "x")], related: vec![] };
+        let m = build_hint_messages(&ctx, Budget { max_transcript_chars: 100, max_agenda_chars: 101, max_related_chars: 0 });
         assert!(m[1].content.len() < 400);
     }
 
@@ -253,11 +279,29 @@ mod tests {
         // Mic only: exactly as before, so notes-only and microphone-only meetings are unchanged.
         assert_eq!(transcript_tail(&[me(0, "Hello")], 500), "[0:00] Hello");
 
-        let ctx = HintContext { agenda: String::new(), recent: both.to_vec() };
+        let ctx = HintContext { agenda: String::new(), recent: both.to_vec(), related: vec![] };
         let m = build_hint_messages(&ctx, Budget::default());
         assert!(m[0].content.contains("\"Others:\""), "the model is told what the labels mean");
         assert!(!m[0].content.contains("no speaker names"));
-        let mic_only = build_hint_messages(&HintContext { agenda: String::new(), recent: vec![me(0, "Hi")] }, Budget::default());
+        let mic_only = build_hint_messages(&HintContext { agenda: String::new(), recent: vec![me(0, "Hi")], related: vec![] }, Budget::default());
         assert!(mic_only[0].content.contains("no speaker names"));
+    }
+
+    #[test]
+    fn earlier_meetings_are_offered_only_when_there_are_some_and_within_budget() {
+        let rel = |t: &str, x: &str| Related { meeting_id: 1, title: t.into(), day: "Mon 16 Nov".into(), excerpt: x.into() };
+        let plain = build_hint_messages(&HintContext { recent: vec![seg(0, "Can we sign it?")], ..Default::default() }, Budget::default());
+        assert!(!plain[1].content.contains("earlier meetings") && !plain[0].content.contains("earlier meetings"), "unchanged when there is no memory");
+
+        let ctx = HintContext { related: vec![rel("Budget review", "vendor contract capped at 40k")], recent: vec![seg(0, "Can we sign it?")], ..Default::default() };
+        let m = build_hint_messages(&ctx, Budget::default());
+        assert!(m[1].content.contains("- [Mon 16 Nov, \"Budget review\"] vendor contract capped at 40k"));
+        assert!(m[0].content.contains("earlier meetings") && m[0].content.contains("Never present it as something said in this meeting"));
+        assert!(m[1].content.ends_with("What should I say or ask next?"));
+
+        let many: Vec<Related> = (0..20).map(|i| rel(&format!("M{i}"), &"x".repeat(200))).collect();
+        let m = build_hint_messages(&HintContext { related: many, recent: vec![seg(0, "Hi")], ..Default::default() }, Budget::default());
+        let block: Vec<&str> = m[1].content.lines().filter(|l| l.starts_with("- [")).collect();
+        assert!(!block.is_empty() && block.len() < 20, "whole excerpts only, inside the budget: {}", block.len());
     }
 }

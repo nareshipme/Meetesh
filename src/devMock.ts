@@ -150,7 +150,7 @@ export function installMock(variant: string) {
     const timer = window.setInterval(() => {
       if (!hintBusy) {
         clearInterval(timer);
-        emit("hint-done", { trigger, meeting_id: meetingId, hint_id: id, text: null, cancelled: true, error: null, first_token_ms: 0, total_ms: 0, tokens: 0, on_gpu: false, cpu_fallback: false });
+        emit("hint-done", { sources: [], trigger, meeting_id: meetingId, hint_id: id, text: null, cancelled: true, error: null, first_token_ms: 0, total_ms: 0, tokens: 0, on_gpu: false, cpu_fallback: false });
         return;
       }
       i++;
@@ -158,7 +158,7 @@ export function installMock(variant: string) {
       if (i >= words.length) {
         clearInterval(timer);
         hintBusy = false;
-        emit("hint-done", { trigger, meeting_id: meetingId, hint_id: id, text: words.join(" "), cancelled: false, error: null, first_token_ms: 900, total_ms: Date.now() - t0, tokens: words.length, on_gpu: true, cpu_fallback: false });
+        emit("hint-done", { sources: meetingId === 2 ? [] : [{ meeting_id: 2, title: "Weekly product sync", day: "Mon 16 Nov" }], trigger, meeting_id: meetingId, hint_id: id, text: words.join(" "), cancelled: false, error: null, first_token_ms: 900, total_ms: Date.now() - t0, tokens: words.length, on_gpu: true, cpu_fallback: false });
       }
     }, 450);
     return id;

@@ -61,6 +61,30 @@ impl Db {
     /// Meetings that match `query`, best first, each with up to three matching places.
     pub fn search(&self, query: &str) -> Result<Vec<SearchResult>> {
         let Some(q) = fts_query(query) else { return Ok(vec![]) };
+        self.run_search(&q, None)
+    }
+
+    /// Places in *other* meetings that talk about the same things: every keyword must appear (as a
+    /// prefix), and if nothing matches all of them, the best two or three are tried. Best first,
+    /// at most `max_meetings` meetings. Used to give a hint some memory of earlier meetings.
+    pub fn related(&self, exclude_meeting: i64, keywords: &[String], max_meetings: usize) -> Result<Vec<SearchResult>> {
+        let words: Vec<&str> = keywords.iter().map(String::as_str).filter(|k| !k.is_empty()).collect();
+        for take in [3usize, 2] {
+            if words.len() < take {
+                continue;
+            }
+            let q = words[..take].iter().map(|w| format!("\"{w}\"*")).collect::<Vec<_>>().join(" ");
+            let mut found = self.run_search(&q, Some(exclude_meeting))?;
+            if !found.is_empty() {
+                found.truncate(max_meetings);
+                return Ok(found);
+            }
+        }
+        Ok(vec![])
+    }
+
+    fn run_search(&self, q: &str, exclude: Option<i64>) -> Result<Vec<SearchResult>> {
+        let exclude = exclude.unwrap_or(-1);
         // meeting id -> (best rank, matches). bm25 ranks are negative; lower is better.
         let mut by_meeting: HashMap<i64, (f64, Vec<(f64, Match)>)> = HashMap::new();
         let mut add = |id: i64, rank: f64, m: Match| {
@@ -75,9 +99,9 @@ impl Db {
                     snippet(fts_meetings, 1, char(1), char(2), '…', ?2),
                     instr(snippet(fts_meetings, 0, char(1), char(2), '…', ?2), char(1)) > 0,
                     instr(snippet(fts_meetings, 1, char(1), char(2), '…', ?2), char(1)) > 0
-               FROM fts_meetings WHERE fts_meetings MATCH ?1 ORDER BY bm25(fts_meetings) LIMIT 200",
+               FROM fts_meetings WHERE fts_meetings MATCH ?1 AND rowid != ?3 ORDER BY bm25(fts_meetings) LIMIT 200",
         )?;
-        let rows = stmt.query_map(params![q, SNIPPET_WORDS], |r| {
+        let rows = stmt.query_map(params![q, SNIPPET_WORDS, exclude], |r| {
             Ok((r.get::<_, i64>(0)?, r.get::<_, f64>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?, r.get::<_, bool>(4)?, r.get::<_, bool>(5)?))
         })?;
         for row in rows {
@@ -95,9 +119,9 @@ impl Db {
         let mut stmt = self.conn.prepare(
             "SELECT s.meeting_id, s.start_ms, bm25(fts_segments), snippet(fts_segments, 0, char(1), char(2), '…', ?2)
                FROM fts_segments JOIN transcript_segments s ON s.id = fts_segments.rowid
-              WHERE fts_segments MATCH ?1 ORDER BY bm25(fts_segments) LIMIT 400",
+              WHERE fts_segments MATCH ?1 AND s.meeting_id != ?3 ORDER BY bm25(fts_segments) LIMIT 400",
         )?;
-        let rows = stmt.query_map(params![q, SNIPPET_WORDS], |r| {
+        let rows = stmt.query_map(params![q, SNIPPET_WORDS, exclude], |r| {
             Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, f64>(2)?, r.get::<_, String>(3)?))
         })?;
         for row in rows {
