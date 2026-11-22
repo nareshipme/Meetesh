@@ -373,6 +373,13 @@ mod tests {
         let store = store(&dir);
         let p = store.download(&e, |_| {}, &AtomicBool::new(false)).unwrap();
         assert_eq!(fs::read(p).unwrap(), b);
+        // (the test server counts a body after writing it, so give the last count a moment to land)
+        for _ in 0..200 {
+            if served.load(Ordering::Relaxed) >= 300_000 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
         assert_eq!(served.load(Ordering::Relaxed), 300_000, "only the missing tail may be transferred");
         fs::remove_dir_all(dir).ok();
     }
