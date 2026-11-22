@@ -7,6 +7,7 @@
 
 pub mod gate;
 pub mod memory;
+pub mod points;
 pub mod prompt;
 pub mod summary;
 pub mod title;

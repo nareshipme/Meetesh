@@ -106,6 +106,7 @@ export function installMock(variant: string) {
 
   function startRecordingSim(id: number, withSystem: boolean) {
     recordingId = id;
+    startPointsSim(id);
     find(id).has_system_audio = withSystem;
     find(id).status = "recording";
     const t0 = Date.now();
@@ -140,6 +141,23 @@ export function installMock(variant: string) {
   }
 
   let autoHints = "off";
+  let livePointsOn = true;
+  const POINT_STEPS: Array<{ now: string; points: string[] }> = [
+    { now: "Discussing the spring campaign budget", points: ["Marketing wants to spend sixty thousand", "The cap from last quarter was forty thousand", "Open: Sam to get a second quote by Wednesday"] },
+    { now: "Discussing the launch date", points: ["Open: Sam to get a second quote by Wednesday", "Decided: launch on the twenty second", "Priya confirms with support by Friday"] },
+    { now: "Who owns the pricing page?", points: ["Decided: launch on the twenty second", "Open: nobody owns the pricing page since Dana left"] },
+  ];
+  let pointsTimers: number[] = [];
+  const pointsEvent = (id: number, step: number, updating: boolean) =>
+    emit("live-points", { meeting_id: id, enabled: livePointsOn, now: step >= 0 ? POINT_STEPS[step].now : "", points: step >= 0 ? POINT_STEPS[step].points : [], updating });
+  function startPointsSim(id: number) {
+    pointsTimers.forEach((t) => clearTimeout(t));
+    pointsTimers = [];
+    for (let i = 0; i < POINT_STEPS.length; i++) {
+      pointsTimers.push(window.setTimeout(() => livePointsOn && pointsEvent(id, i, true), 5000 + i * 7000));
+      pointsTimers.push(window.setTimeout(() => livePointsOn && pointsEvent(id, i, false), 6500 + i * 7000));
+    }
+  }
   function runHintSim(meetingId: number, trigger: "question" | "pause" | null): number {
     if (hintBusy) throw "A hint is already being generated";
     hintBusy = true;
@@ -390,6 +408,12 @@ export function installMock(variant: string) {
           return null;
         case "request_hint":
           return runHintSim(a.meetingId, null);
+        case "get_live_points":
+          return { meeting_id: recordingId ?? 0, enabled: livePointsOn, now: "", points: [], updating: false };
+        case "set_live_points":
+          livePointsOn = !!a.enabled;
+          emit("live-points", { meeting_id: recordingId ?? 0, enabled: livePointsOn, now: "", points: [], updating: false });
+          return null;
         case "get_auto_hints":
           return autoHints;
         case "set_auto_hints":

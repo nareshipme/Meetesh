@@ -156,6 +156,17 @@ export interface SummaryEvent {
 export type HintTrigger = "question" | "pause" | null;
 export type AutoHintMode = "off" | "questions" | "questions_and_pauses";
 
+/** The live list of what is being discussed. Also sent when the setting is switched (meeting_id may be 0). */
+export interface LivePointsState {
+  meeting_id: number;
+  enabled: boolean;
+  /** What is being discussed right now. */
+  now: string;
+  points: string[];
+  /** An update is being written. */
+  updating: boolean;
+}
+
 export interface HintPieceEvent {
   trigger: HintTrigger;
   meeting_id: number;
@@ -231,6 +242,9 @@ export const api = {
   setAgenda: (id: number, agenda: string) => invoke<Meeting>("set_agenda", { id, agenda }),
   requestHint: (meetingId: number) => invoke<number>("request_hint", { meetingId }),
   cancelHint: () => invoke<void>("cancel_hint"),
+  getLivePoints: () => invoke<LivePointsState>("get_live_points"),
+  setLivePoints: (enabled: boolean) => invoke<void>("set_live_points", { enabled }),
+  onLivePoints: (cb: (e: LivePointsState) => void) => listen<LivePointsState>("live-points", (e) => cb(e.payload)),
   getAutoHints: () => invoke<AutoHintMode>("get_auto_hints"),
   setAutoHints: (mode: AutoHintMode) => invoke<void>("set_auto_hints", { mode }),
   assistReady: () => invoke<boolean>("assist_ready"),

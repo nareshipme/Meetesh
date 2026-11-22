@@ -38,6 +38,7 @@ Rule: when someone reports a manual result, update this table in the same change
 | Readable default titles | New meeting is "Meeting on Sun 22 Nov, 3:45 PM" | Unit tests including the upgrade | Not yet |
 | **Notes in the background**: line of jobs, paused (not cancelled) for hints and for a recording on a CPU | TESTING.md: Meeting notes | Unit tests of the rules; a real Gemma 3 1B run (hint 4 s into notes took 6.0 s, same as idle; notes finished) | Not yet |
 | **Hints that remember earlier meetings** | TESTING.md: Hints that remember earlier meetings | Unit tests (keywords, related search, prompt); one scripted real-model case (generic hint became "revisit the $40,000 limit from the budget review") | Not yet |
+| **Live points ("Now discussing")** | TESTING.md: Live points | Unit tests (parse, prompt, scheduler, gate); one scripted real-model case (16 to 20 s per update on a CPU) | Not yet. CPU cost on a slow machine is the open question |
 | Packaged macOS build (macOS 13+, Info.plist microphone text) | Build a bundle and run it | Config only | Not yet |
 
 ## Log

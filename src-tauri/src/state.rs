@@ -61,6 +61,8 @@ pub struct NotesQueue {
 }
 
 pub struct AppState {
+    /// The "what is being discussed" list while recording.
+    pub live_points: Arc<crate::live_points::LivePoints>,
     /// Hints offered by themselves while recording (opt-in).
     pub auto_hints: Arc<crate::auto_hints::AutoHints>,
     pub db: Mutex<Db>,
@@ -111,6 +113,7 @@ impl AppState {
             .filter_map(|r| db.get_setting(&selection_key(r)).ok().flatten().filter(|v| !v.is_empty()).map(|v| (r, v)))
             .collect::<HashMap<_, _>>();
         Ok(AppState {
+            live_points: Arc::new(crate::live_points::LivePoints::new(crate::live_points::load_enabled(&db))),
             auto_hints: Arc::new(crate::auto_hints::AutoHints::new(auto_mode)),
             db: Mutex::new(db),
             recordings_root: data_dir.join("recordings"),

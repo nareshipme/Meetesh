@@ -13,6 +13,7 @@ mod capture;
 mod commands;
 mod events;
 mod live;
+mod live_points;
 mod runtime;
 mod state;
 mod system_audio;
@@ -71,6 +72,8 @@ pub fn run() {
             assist::cancel_hint,
             assist::assist_ready,
             assist::active_hint,
+            assist::get_live_points,
+            assist::set_live_points,
             assist::get_auto_hints,
             assist::set_auto_hints,
             summary::summarize_meeting,

@@ -33,6 +33,7 @@ pub fn live_sink(app: &AppHandle, meeting_id: i64, model_id: String, source: Sou
                 }
             }
             st.auto_hints.on_segments(&segments);
+            st.live_points.on_segments(&segments);
             let _ = seg_app.emit(LIVE_SEGMENTS, LiveSegmentsEvent { meeting_id, segments });
         },
         move |report| {
