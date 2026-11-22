@@ -3,6 +3,7 @@ import type { useAutoHints } from "../hooks/useAutoHints";
 import type { ModelsState } from "../hooks/useModels";
 import { useLivePoints } from "../hooks/useLivePoints";
 import ModelSettings from "./ModelSettings";
+import OnlineNotes from "./OnlineNotes";
 import type { AutoHintMode } from "../api";
 
 interface Props {
@@ -44,6 +45,7 @@ export default function SettingsDialog({ ms, auto, onClose }: Props) {
           <h3 className="section-title">Models</h3>
           <p className="muted small">Models run on this device. Each job can use a different one; downloads happen once.</p>
           <ModelSettings ms={ms} />
+          <OnlineNotes />
         </section>
 
         <section>
@@ -67,7 +69,7 @@ export default function SettingsDialog({ ms, auto, onClose }: Props) {
         <section>
           <h3 className="section-title">About</h3>
           <p className="muted small">
-            Meetesh runs on this device. Audio and transcripts are not sent anywhere.
+            Meetesh runs on this device. Audio and transcripts are not sent anywhere, unless you turn on online meeting notes above.
             {ms.logDir && <> Log folder: <code>{ms.logDir}</code></>}
           </p>
         </section>

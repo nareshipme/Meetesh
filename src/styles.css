@@ -88,6 +88,10 @@ progress { flex: 1; min-width: 100px; max-width: 320px; height: 8px; accent-colo
 .chip { font-size: 11px; font-weight: 600; padding: 0 6px; border-radius: 999px; margin-left: 4px; }
 .chip-rec { color: var(--danger); background: var(--danger-soft); }
 .chip-busy { color: var(--accent); background: var(--accent-soft); }
+.pill { font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; color: var(--muted); background: var(--panel); border: 1px solid var(--line); }
+.pill-warn { color: var(--warn); background: var(--warn-soft); border-color: transparent; }
+.online input[type="text"], .online input[type="password"] { min-width: 0; flex: 1 1 220px; }
+.online .field > .row { flex: 1 1 280px; justify-content: flex-end; }
 .chip-warn { color: var(--warn); background: var(--warn-soft); }
 
 .model-head { display: flex; gap: 10px; align-items: flex-start; }

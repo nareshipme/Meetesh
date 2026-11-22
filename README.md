@@ -12,7 +12,7 @@ The name comes from *ishara* (इशारा), Hindi/Urdu for a quiet hint or s
 ## Why Meetesh
 
 - **Private by design.** Audio and transcripts stay on your device. After the one-time model download, the app works fully offline. Nothing is uploaded.
-- **Local models.** Speech recognition ([whisper.cpp](https://github.com/ggml-org/whisper.cpp), or NVIDIA Parakeet on ONNX Runtime) and live hints ([llama.cpp](https://github.com/ggml-org/llama.cpp) with Gemma 4 E2B) run on-device. No API keys needed.
+- **Local models.** Speech recognition ([whisper.cpp](https://github.com/ggml-org/whisper.cpp), or NVIDIA Parakeet on ONNX Runtime) and live hints ([llama.cpp](https://github.com/ggml-org/llama.cpp) with Gemma 4 E2B) run on-device. No API keys needed. An online model for the meeting notes is an opt-in extra (see Privacy).
 - **Light and native.** Built with [Tauri](https://tauri.app) and Rust, not Electron.
 - **Swappable models.** Models are listed in a manifest, not hard-coded, so improving or replacing one is a data change.
 - **Open source (MIT).** Read it, fork it, improve it.
@@ -31,6 +31,8 @@ These show the interface running against the built-in sample-data backend (see [
 *The transcript of a call: your microphone and the other participants' audio, labelled You and Others.*
 
 ![The Settings dialog with a model choice per job](docs/screenshots/settings.png)
+
+![Optional online meeting notes: off by default, a plain warning, a key in the keychain, and a consent box before it can be turned on](docs/screenshots/online-notes.png)
 *Settings: one model choice for each job (speech, hints, notes), with downloads in the same place.*
 
 <img src="docs/screenshots/narrow-live.png" alt="The live screen at phone width" width="260">
@@ -68,6 +70,7 @@ These show the interface running against the built-in sample-data backend (see [
 | **A calmer layout**: while recording, a *live screen* (transcript on the left; on the right the hint button, the automatic-hints menu, the current hint and the meeting goals). After recording, a *review page* with tabs **Notes / Transcript / Goals**, and a **⋯** menu for the rarer actions (copy or export Markdown, export audio, re-transcribe, delete). Everything you set up once is in one **Settings** dialog (gear, or Ctrl/Cmd+,). The sidebar is only meetings, search and a one-line model status | Working in the mock-backend UI checks; not yet used on real hardware |
 | **Choose the model for each job** (closes [#8](https://github.com/nareshipme/Meetesh/issues/8)): speech to text (Whisper Tiny, Base, Small compact, or Parakeet TDT 0.6B v3), hints (Gemma 3 1B, Gemma 4 E2B, Gemma 3 4B) and meeting notes and titles (same as hints, or another model, e.g. a bigger one since it runs in the background). Choices are remembered; a model that is not installed shows its download in the same box; a model nobody uses any more is released from memory | Selection logic unit-tested; see "Model choices" below for what was measured |
 | **Parakeet speech engine** (second engine next to Whisper): NVIDIA Parakeet TDT 0.6B v3, int8, 670 MB in a folder of three files. It writes punctuation and capitals, detects the language itself (25 European languages; **not** Hindi or other Indian languages) and is several times faster than Whisper Small on CPU. Whisper stays the default | Real model run in a Linux sandbox (see "Model choices"); not yet tried on a real call, macOS or Windows ([docs/VERIFICATION.md](docs/VERIFICATION.md)) |
+| **Optional online model for meeting notes and titles** (OpenRouter free models, Sarvam, or any OpenAI-compatible address, including Ollama on this computer). Off by default. Turning it on needs a ticked consent box; the key goes into the operating system's keychain; notes are then written online when you click the button (or after every meeting, only if you also choose that); hints and live points never go online. A busy provider is retried with backoff; an empty reply is an error; error messages never contain the key or your text; plain `http://` is refused except for this computer | Client tested against a local mock server (request format, both key styles, retries and Retry-After, errors, cancel, model list); the card checked in the mock-backend UI. **Not tried against a real provider** (the build machine cannot reach them) or with the real keychain |
 | Responsive, dark-mode-aware UI | Working |
 
 What a person has actually tried on real hardware, and what only has automated checks, is tracked in [docs/VERIFICATION.md](docs/VERIFICATION.md).
@@ -274,7 +277,7 @@ Issues, ideas and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING
 
 ## Privacy and recording consent
 
-Meetesh does not send audio or transcripts anywhere. Capturing the other participants records everything your computer plays, so tell the people on the call, as with any recording. The only network access is downloading models you ask for (and, once added, an optional summary provider you choose). The app shows a consent reminder before each recording, but **you are responsible for following the recording laws and meeting etiquette that apply to you**. Many places require everyone's consent.
+By default Meetesh does not send audio or transcripts anywhere. The one exception is the **optional online model for meeting notes and titles** in Settings: if you turn it on (it is off, and needs a ticked consent box and your own key), the *text* of the transcript, and later the notes it wrote, are sent to the provider you chose, only when notes or a title are written. Audio is never sent. What the provider keeps is decided by its terms; free models in particular may store or learn from what you send. Capturing the other participants records everything your computer plays, so tell the people on the call, as with any recording. The only network access is downloading models you ask for (and, only if you turn it on, the online notes provider you choose). The app shows a consent reminder before each recording, but **you are responsible for following the recording laws and meeting etiquette that apply to you**. Many places require everyone's consent.
 
 ## License
 

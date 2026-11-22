@@ -31,6 +31,17 @@ cpal = "0.15"
 serde = { version = "1", features = ["derive"] }
 meetesh-core = { path = "../crates/meetesh-core", features = ["whisper", "llm"] }
 
+# The API key for the optional online notes model lives in the operating system's keychain.
+[target.'cfg(target_os = "macos")'.dependencies.keyring]
+version = "3.6"
+features = ["apple-native"]
+[target.'cfg(target_os = "windows")'.dependencies.keyring]
+version = "3.6"
+features = ["windows-native"]
+[target.'cfg(target_os = "linux")'.dependencies.keyring]
+version = "3.6"
+features = ["linux-native-sync-persistent", "crypto-rust"]
+
 # GPU acceleration for the on-device language model: Metal on macOS. Declared here so Cargo turns
 # the feature on for the copy of the core (and llama.cpp) that the app uses.
 [target.'cfg(target_os = "macos")'.dependencies]

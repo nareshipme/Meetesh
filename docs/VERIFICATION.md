@@ -40,6 +40,7 @@ Rule: when someone reports a manual result, update this table in the same change
 | **Hints that remember earlier meetings** | TESTING.md: Hints that remember earlier meetings | Unit tests (keywords, related search, prompt); one scripted real-model case (generic hint became "revisit the $40,000 limit from the budget review") | Not yet |
 | **Live points ("Now discussing")** | TESTING.md: Live points | Unit tests (parse, prompt, scheduler, gate); one scripted real-model case (16 to 20 s per update on a CPU) | Not yet. CPU cost on a slow machine is the open question |
 | **Parakeet speech engine** (download of a 3-file model, loading, live and re-transcribe) | TESTING.md: Choosing models | Real model on a Linux CPU: edge cases (empty, silence, 0.25 s, 26 s chunks), accuracy bench and speed; downloader tests for folder models; CI links ONNX Runtime on Linux, macOS and Windows | Not yet. Not verified on Windows/macOS with the real model, with real voices, or with an accent |
+| **Online meeting notes** (OpenRouter, Sarvam, custom address; key in keychain) | TESTING.md: Online meeting notes | Core client against a local mock server (format, both key styles, retries, errors, cancel, model list); mock-backend UI checks | Not yet. Not tried against any real provider, nor with the real macOS or Windows keychain |
 | Packaged macOS build (macOS 13+, Info.plist microphone text) | Build a bundle and run it | Config only | Not yet |
 
 ## Log

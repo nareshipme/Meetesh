@@ -93,8 +93,14 @@ fn emit(app: &AppHandle, meeting_id: i64, state: &'static str, position: usize, 
 /// installed and the meeting has enough in it. Quietly does nothing otherwise.
 pub fn maybe_auto_summarize(app: &AppHandle, meeting_id: i64) {
     let st = app.state::<AppState>();
-    let installed = st.summary_model().map(|m| st.models.is_installed(m)).unwrap_or(false);
-    if !installed {
+    let online = crate::commands::online::load_settings(&st);
+    if online.enabled {
+        // Meeting text only leaves the device when asked for: unless "write notes automatically" was
+        // chosen, online notes are written when the user clicks the button.
+        if !online.auto {
+            return;
+        }
+    } else if !st.summary_model().map(|m| st.models.is_installed(m)).unwrap_or(false) {
         return;
     }
     let words = match st.db.lock().unwrap().get_transcript(meeting_id) {
@@ -113,9 +119,11 @@ pub fn maybe_auto_summarize(app: &AppHandle, meeting_id: i64) {
 /// Validate, join the line, and make sure a worker is running.
 fn enqueue(app: &AppHandle, meeting_id: i64) -> Result<()> {
     let st = app.state::<AppState>();
-    let entry = st.summary_model()?.clone();
-    if !st.models.is_installed(&entry) {
-        return Err(Error::Other(format!("Download {} first (it writes the meeting notes; you can pick another model in Settings)", entry.name)));
+    if !crate::commands::online::load_settings(&st).enabled {
+        let entry = st.summary_model()?.clone();
+        if !st.models.is_installed(&entry) {
+            return Err(Error::Other(format!("Download {} first (it writes the meeting notes; you can pick another model in Settings)", entry.name)));
+        }
     }
     let meeting = st.db.lock().unwrap().get_meeting(meeting_id)?;
     if meeting.status == "recording" {
@@ -195,19 +203,29 @@ fn run_one(app: &AppHandle, meeting_id: i64, cancel: &Arc<AtomicBool>) {
     let outcome = (|| -> Result<String> {
         let meeting = st.db.lock().unwrap().get_meeting(meeting_id)?; // gone if it was deleted while waiting
         let segments = st.db.lock().unwrap().get_transcript(meeting_id)?;
-        // Do not even load a big model while a hint is being written or a recording runs.
-        if !st.gate.wait_for_turn(true, cancel, |r| on_pause(r)) {
-            return Err(Error::Cancelled);
-        }
-        let assistant = get_notes_assistant(app)?; // may load the model first
-        let run = SummaryRun {
-            cancel: cancel.clone(),
-            yield_to: Some(st.asr_pending.clone()),
-            gate: Some(st.gate.clone()),
-            cpu_bound: !assistant.uses_gpu(),
-            on_pause: Some(on_pause.clone()),
+        // The online model (if the user chose it) runs on someone else's computer, so it neither waits for
+        // hints or a recording nor slows them down. The on-device one does not even get loaded while a
+        // hint is being written or a recording runs.
+        let remote = crate::commands::online::active(&st)?;
+        let local: Arc<meetesh_core::assist::llama::LlamaAssistant>;
+        let (assistant, run): (&dyn Assistant, SummaryRun) = match &remote {
+            Some((r, _)) => (r, SummaryRun { cancel: cancel.clone(), yield_to: None, gate: None, cpu_bound: false, on_pause: None }),
+            None => {
+                if !st.gate.wait_for_turn(true, cancel, |r| on_pause(r)) {
+                    return Err(Error::Cancelled);
+                }
+                local = get_notes_assistant(app)?; // may load the model first
+                let run = SummaryRun {
+                    cancel: cancel.clone(),
+                    yield_to: Some(st.asr_pending.clone()),
+                    gate: Some(st.gate.clone()),
+                    cpu_bound: !local.uses_gpu(),
+                    on_pause: Some(on_pause.clone()),
+                };
+                (local.as_ref(), run)
+            }
         };
-        let summary = summarize(assistant.as_ref(), &segments, &meeting.agenda, &run, |d, t| {
+        let summary = summarize(assistant, &segments, &meeting.agenda, &run, |d, t| {
             *progress.lock().unwrap() = (d, t);
             send("running", None);
         })?;
@@ -217,7 +235,7 @@ fn run_one(app: &AppHandle, meeting_id: i64, cancel: &Arc<AtomicBool>) {
         // Best effort: the notes are already saved, so a failure here changes nothing else.
         let user_named = st.db.lock().unwrap().get_meeting(meeting_id)?.title_source == title_source::USER;
         if !user_named {
-            match generate_title(assistant.as_ref(), &md, &run) {
+            match generate_title(assistant, &md, &run) {
                 Ok(Some(t)) => match st.db.lock().unwrap().set_model_title(meeting_id, &t) {
                     Ok(Some(_)) => log::info!("title for meeting {meeting_id} written by the model ({} chars)", t.chars().count()),
                     Ok(None) => {} // the user renamed it in the meantime
