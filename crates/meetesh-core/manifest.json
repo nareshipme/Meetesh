@@ -69,6 +69,19 @@
       "min_ram_mb": 3000
     },
     {
+      "id": "qwen2.5-0.5b-it",
+      "role": "assist",
+      "name": "Qwen2.5 0.5B (tiny)",
+      "description": "The smallest model we found that follows the hint format: 491 MB, about a third faster than Gemma 3 1B. Its hints are plainer and sometimes off the point, and it does not stay quiet when there is nothing to say. Try it on a slow machine.",
+      "file_name": "qwen2.5-0.5b-instruct-q4_k_m.gguf",
+      "url": "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf",
+      "sha256": "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db",
+      "size_bytes": 491400032,
+      "license": "Apache-2.0 (Alibaba Qwen2.5; the GGUF is published by Qwen)",
+      "language": "",
+      "min_ram_mb": 1500
+    },
+    {
       "id": "gemma-3-1b-it",
       "role": "assist",
       "name": "Gemma 3 1B (fast)",
