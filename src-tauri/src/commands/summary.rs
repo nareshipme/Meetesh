@@ -97,7 +97,7 @@ pub fn maybe_auto_summarize(app: &AppHandle, meeting_id: i64) {
     if online.enabled {
         // Meeting text only leaves the device when asked for: unless "write notes automatically" was
         // chosen, online notes are written when the user clicks the button.
-        if !online.auto {
+        if !online.auto || !crate::commands::permissions::network_allowed(&st) {
             return;
         }
     } else if !st.summary_model().map(|m| st.models.is_installed(m)).unwrap_or(false) {

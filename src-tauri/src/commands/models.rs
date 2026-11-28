@@ -100,6 +100,7 @@ pub fn select_model(app: AppHandle, state: State<AppState>, slot: Role, id: Stri
 #[tauri::command]
 pub fn download_model(app: AppHandle, state: State<AppState>, id: String) -> Result<()> {
     let entry = state.manifest.get(&id).cloned().ok_or_else(|| Error::Other(format!("Unknown model {id}")))?;
+    crate::commands::permissions::require_network(&state, "download models")?;
     {
         let mut busy = state.downloading.lock().unwrap();
         if *busy {

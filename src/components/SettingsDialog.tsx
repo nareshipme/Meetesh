@@ -4,6 +4,7 @@ import type { ModelsState } from "../hooks/useModels";
 import { useLivePoints } from "../hooks/useLivePoints";
 import ModelSettings from "./ModelSettings";
 import OnlineNotes from "./OnlineNotes";
+import PermissionsPanel from "./PermissionsPanel";
 import type { AutoHintMode } from "../api";
 
 interface Props {
@@ -64,6 +65,12 @@ export default function SettingsDialog({ ms, auto, onClose }: Props) {
             Live points: a short list of what is being discussed, updated about once a minute while recording
           </label>
           <p className="muted small">It uses the processor for part of each minute. Turn it off if live text lags on a slow machine.</p>
+        </section>
+
+        <section>
+          <h3 className="section-title">Permissions</h3>
+          <p className="muted small">What each feature needs. Only the microphone is required; everything else is optional and can be turned off.</p>
+          <PermissionsPanel />
         </section>
 
         <section>

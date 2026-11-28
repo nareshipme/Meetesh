@@ -36,7 +36,19 @@ pub struct StartedRecording {
 }
 
 #[tauri::command]
-pub fn system_audio_support() -> system_audio::SystemAudioSupport {
+pub fn system_audio_support(state: State<AppState>) -> system_audio::SystemAudioSupport {
+    system_audio_support_for(&state)
+}
+
+/// Whether the other participants can be recorded: the system must support it and the user must not
+/// have turned it off (Settings > Permissions).
+fn system_audio_support_for(st: &AppState) -> system_audio::SystemAudioSupport {
+    if !crate::commands::permissions::system_audio_allowed(st) {
+        return system_audio::SystemAudioSupport {
+            available: false,
+            reason: "Recording the other participants is turned off in Settings > Permissions.".into(),
+        };
+    }
     system_audio::support()
 }
 
@@ -86,7 +98,8 @@ pub fn start_recording(
             let _ = session.stop();
             let _ = state.db.lock().unwrap().abort_recording(meeting.id);
             state.gate.set_recording(false);
-            return Err(Error::Other(e));
+            // The usual cause is a blocked microphone; the permissions screen shows and fixes that.
+            return Err(Error::Other(format!("{e} If the microphone is blocked, Settings > Permissions shows how to allow it.")));
         }
     };
     // The meeting clock starts now. The other participants' track is padded with silence up to its
@@ -96,7 +109,7 @@ pub fn start_recording(
     let mut system_audio_error = None;
     let mut system = None;
     if system_audio.unwrap_or(false) {
-        match start_system_track(&app, &meeting, live.as_ref(), live_model, clock_start) {
+        match start_system_track(&app, &state, &meeting, live.as_ref(), live_model, clock_start) {
             Ok(track) => system = Some(track),
             Err(e) => {
                 log::warn!("system audio not recorded for meeting {}: {e}", meeting.id);
@@ -121,12 +134,13 @@ pub fn start_recording(
 /// transcription. On failure nothing is left behind and the microphone recording carries on.
 fn start_system_track(
     app: &AppHandle,
+    state: &AppState,
     meeting: &Meeting,
     live: Option<&Arc<Mutex<LiveSettle>>>,
     live_model: Option<String>,
     clock_start: Instant,
 ) -> std::result::Result<SystemTrack, String> {
-    let support = system_audio::support();
+    let support = system_audio_support_for(state);
     if !support.available {
         return Err(support.reason);
     }
