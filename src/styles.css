@@ -89,6 +89,11 @@ progress { flex: 1; min-width: 100px; max-width: 320px; height: 8px; accent-colo
 .chip-rec { color: var(--danger); background: var(--danger-soft); }
 .chip-busy { color: var(--accent); background: var(--accent-soft); }
 .pill { font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; color: var(--muted); background: var(--panel); border: 1px solid var(--line); }
+.pill-ok { color: var(--ok, #1a7f37); background: transparent; border-color: var(--line); }
+.pill-bad { color: var(--danger); background: var(--danger-soft); border-color: transparent; }
+.pill-muted { color: var(--muted); }
+.perms { display: flex; flex-direction: column; gap: 10px; }
+.perm .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .pill-warn { color: var(--warn); background: var(--warn-soft); border-color: transparent; }
 .online input[type="text"], .online input[type="password"] { min-width: 0; flex: 1 1 220px; }
 .online .field > .row { flex: 1 1 280px; justify-content: flex-end; }

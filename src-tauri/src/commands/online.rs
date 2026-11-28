@@ -40,6 +40,7 @@ pub fn active(st: &AppState) -> Result<Option<(RemoteAssistant, Settings)>> {
     if !s.enabled {
         return Ok(None);
     }
+    crate::commands::permissions::require_network(st, "write notes with an online model")?;
     let provider = s.provider()?;
     let Some(key) = load_key()? else {
         return Err(Error::Other("Online notes are on but there is no API key. Add it in Settings, or turn online notes off.".into()));
@@ -121,7 +122,8 @@ fn client_for(settings: &Settings) -> Result<RemoteAssistant> {
 
 /// A tiny test request that contains no meeting text.
 #[tauri::command]
-pub async fn test_online(settings: Settings) -> Result<()> {
+pub async fn test_online(state: State<'_, AppState>, settings: Settings) -> Result<()> {
+    crate::commands::permissions::require_network(&state, "test the connection")?;
     tauri::async_runtime::spawn_blocking(move || client_for(&settings)?.check())
         .await
         .map_err(|e| Error::Other(format!("The test stopped: {e}")))?
@@ -129,7 +131,8 @@ pub async fn test_online(settings: Settings) -> Result<()> {
 
 /// The models the provider offers (OpenRouter: only the free ones).
 #[tauri::command]
-pub async fn list_online_models(mut settings: Settings) -> Result<Vec<String>> {
+pub async fn list_online_models(state: State<'_, AppState>, mut settings: Settings) -> Result<Vec<String>> {
+    crate::commands::permissions::require_network(&state, "ask the provider for its models")?;
     // Only the address and the key matter for listing; any model name will do.
     if settings.model.trim().is_empty() {
         settings.model = "list".into();

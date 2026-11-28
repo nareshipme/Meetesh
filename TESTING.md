@@ -211,6 +211,17 @@ Note your OS, CPU, whether the model was tiny or base, and the relevant log line
 ## Known limits right now
 No system audio on Linux, English models only, one recording per meeting, no summaries yet, hints only on request.
 
+## 6b. Permissions
+- [ ] Settings > Permissions lists Microphone and Files as Required, and Other participants' audio, Internet access and Keychain as Optional, each with what it is used for and what is lost without it.
+- [ ] **macOS, fresh install** (or after `tccutil reset Microphone app.meetesh.desktop` and `tccutil reset ScreenCapture app.meetesh.desktop`): Microphone says "Not allowed yet"; **Allow…** shows the macOS prompt; after answering, the row updates (also when you click back into the window). Deny it: the row says Blocked and offers only **Open system settings**, which opens Privacy & Security > Microphone.
+- [ ] **macOS**: Other participants' audio says "Not allowed yet"; **Allow…** shows the Screen & System Audio Recording prompt. Turn it on in System Settings, return: Allowed (macOS may need the app restarted).
+- [ ] **Windows**: with Settings > Privacy & security > Microphone > "Let desktop apps access your microphone" off, the Microphone row says Blocked and **Open system settings** opens that page; turn it on and return: Allowed. The other participants' row says no permission is needed.
+- [ ] **Linux**: the Microphone row says it cannot be checked; the other participants' row says not available.
+- [ ] Untick "Allow Meetesh to record the other participants": the recording dialog no longer offers it, and a recording has only the You track. Tick it again: it returns.
+- [ ] Untick "Allow Meetesh to use the internet": a model download says offline mode is on and does not start; online notes and the Test button refuse with the same message; recording, transcripts and hints keep working. Tick it again: downloads work.
+- [ ] Save an online notes key: the Keychain row says it is stored and offers **Remove the stored key**; removing turns online notes off.
+- [ ] Start a recording with the microphone blocked: the message says Settings > Permissions shows how to allow it, and no empty meeting is left behind.
+
 ## 6a. Online meeting notes (optional)
 Needs a key from OpenRouter (openrouter.ai/keys, free models), Sarvam (dashboard.sarvam.ai) or another OpenAI-compatible provider. Use a meeting that is fine to send out.
 - [ ] Settings > Meeting notes written online: it says "Off: nothing leaves this device", and the switch is locked until the consent box is ticked. List models and Test are locked until a key is saved.

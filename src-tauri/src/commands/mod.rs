@@ -4,6 +4,7 @@ pub mod assist;
 pub mod meetings;
 pub mod models;
 pub mod online;
+pub mod permissions;
 pub mod recording;
 pub mod summary;
 pub mod transcription;

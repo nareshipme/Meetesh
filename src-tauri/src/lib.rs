@@ -14,11 +14,12 @@ mod commands;
 mod events;
 mod live;
 mod live_points;
+mod os_permissions;
 mod runtime;
 mod state;
 mod system_audio;
 
-use commands::{assist, meetings, models, online, recording, summary, transcription};
+use commands::{assist, meetings, models, online, permissions, recording, summary, transcription};
 use state::AppState;
 use tauri::Manager;
 
@@ -85,7 +86,11 @@ pub fn run() {
             online::set_online_key,
             online::clear_online_key,
             online::test_online,
-            online::list_online_models
+            online::list_online_models,
+            permissions::list_permissions,
+            permissions::request_permission,
+            permissions::open_system_settings,
+            permissions::set_permission_switch
         ])
         .run(tauri::generate_context!())
         .expect("error while running Meetesh");

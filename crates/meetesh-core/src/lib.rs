@@ -11,6 +11,7 @@ pub mod error;
 pub mod export;
 pub mod models;
 pub mod online;
+pub mod permissions;
 
 pub use asr::{Source, TranscriptSegment, Transcriber};
 pub use db::{Db, Meeting};

@@ -67,6 +67,8 @@ pub struct AppState {
     /// Hints offered by themselves while recording (opt-in).
     pub auto_hints: Arc<crate::auto_hints::AutoHints>,
     pub db: Mutex<Db>,
+    /// Where everything Meetesh keeps lives (shown on the permissions screen).
+    pub data_dir: PathBuf,
     pub recordings_root: PathBuf,
     /// Where "Export Markdown" writes its files.
     pub exports_root: PathBuf,
@@ -117,6 +119,7 @@ impl AppState {
             live_points: Arc::new(crate::live_points::LivePoints::new(crate::live_points::load_enabled(&db))),
             auto_hints: Arc::new(crate::auto_hints::AutoHints::new(auto_mode)),
             db: Mutex::new(db),
+            data_dir: data_dir.to_path_buf(),
             recordings_root: data_dir.join("recordings"),
             exports_root: data_dir.join("exports"),
             active: Mutex::new(None),

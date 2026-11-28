@@ -122,6 +122,25 @@ export interface OnlineStatus extends OnlineSettings {
   presets: OnlinePreset[];
 }
 
+export type PermissionStatus = "granted" | "denied" | "not_granted" | "off" | "unknown" | "not_needed" | "unsupported";
+
+/** One row of the permissions list (the wording comes from the core, so it is the same everywhere). */
+export interface Permission {
+  id: string;
+  name: string;
+  feature: string;
+  need: "required" | "optional";
+  status: PermissionStatus;
+  detail: string;
+  /** Meetesh can make the system show its prompt now. */
+  can_request: boolean;
+  /** The system's own settings page can be opened from here (that is where a permission is taken back). */
+  opens_settings: boolean;
+  /** A switch inside Meetesh; null when there is none. */
+  switch: boolean | null;
+  without: string;
+}
+
 export type LoadState = "idle" | "loading" | "warming" | "ready" | "failed";
 
 /** Where an installed model is on its way into memory. */
@@ -281,6 +300,10 @@ export const api = {
   cancelSummary: (id: number) => invoke<void>("cancel_summary", { id }),
   summaryStatus: (id: number) => invoke<SummaryStatus>("summary_status", { id }),
   clearSummary: (id: number) => invoke<Meeting>("clear_summary", { id }),
+  listPermissions: () => invoke<Permission[]>("list_permissions"),
+  requestPermission: (id: string) => invoke<void>("request_permission", { id }),
+  openSystemSettings: (id: string) => invoke<void>("open_system_settings", { id }),
+  setPermissionSwitch: (id: string, on: boolean) => invoke<Permission[]>("set_permission_switch", { id, on }),
   onlineStatus: () => invoke<OnlineStatus>("online_status"),
   saveOnline: (settings: OnlineSettings, consent: boolean) => invoke<OnlineStatus>("save_online", { settings, consent }),
   setOnlineKey: (key: string) => invoke<OnlineStatus>("set_online_key", { key }),

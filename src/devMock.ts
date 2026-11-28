@@ -109,6 +109,34 @@ export function installMock(variant: string) {
     { id: "sarvam", name: "Sarvam", base_url: "https://api.sarvam.ai/v1", model: "sarvam-105b", free_only: false, note: "Key from dashboard.sarvam.ai. Good for Indian languages." },
     { id: "custom", name: "Other (OpenAI-compatible)", base_url: "", model: "", free_only: false, note: "Any server that accepts the OpenAI chat completions format: OpenAI, Groq, Together, or Ollama on this computer (http://localhost:11434/v1)." },
   ];
+  // Permissions, like a Mac: the microphone can be asked for, screen and system audio too.
+  const perm = { mic: variant === "permdenied" ? "denied" : variant === "permask" ? "not_asked" : "granted", screen: "not_granted", systemAudioOn: true, networkOn: true };
+  const permissionList = () => {
+    const micOk = perm.mic === "granted";
+    return [
+      { id: "microphone", name: "Microphone", feature: "Recording your voice and live transcription", need: "required",
+        status: micOk ? "granted" : perm.mic === "denied" ? "denied" : "not_granted",
+        detail: micOk ? "Allowed." : perm.mic === "denied" ? "Blocked. Allow Meetesh under System Settings > Privacy & Security > Microphone." : "Not allowed yet. Meetesh asks the first time you record, or you can allow it now.",
+        can_request: perm.mic === "not_asked", opens_settings: true, switch: null,
+        without: "Nothing can be recorded. Meetings you already have are still readable." },
+      { id: "system_audio", name: "Other participants' audio", feature: "Hearing the other side of a call, so the transcript can say You and Others", need: "optional",
+        status: !perm.systemAudioOn ? "off" : perm.screen === "granted" ? "granted" : "not_granted",
+        detail: !perm.systemAudioOn ? "Turned off in Meetesh: the other participants are never recorded." : "Not allowed yet. macOS calls this \"Screen & System Audio Recording\"; Meetesh keeps only the sound and throws the picture away.",
+        can_request: perm.systemAudioOn && perm.screen !== "granted", opens_settings: true, switch: perm.systemAudioOn,
+        without: "Only your microphone is recorded, so everything is labelled as you." },
+      { id: "network", name: "Internet access", feature: "Downloading speech and language models, and (only if you turn it on) writing notes with an online model", need: "optional",
+        status: perm.networkOn ? "granted" : "off",
+        detail: perm.networkOn ? "Allowed. Used only when you download a model or use online notes. Recording, transcripts and hints work without it." : "Offline mode: Meetesh makes no network requests at all.",
+        can_request: false, opens_settings: false, switch: perm.networkOn,
+        without: "Models cannot be downloaded (ones you already have keep working) and online notes cannot be used." },
+      { id: "keychain", name: "Keychain", feature: "Keeping the API key for online notes safe (only if you use online notes)", need: "optional",
+        status: online.has_key ? "granted" : "not_needed",
+        detail: online.has_key ? "An API key is stored in this computer's keychain. Remove it to take it back." : "Not used: no API key is stored.",
+        can_request: false, opens_settings: false, switch: null, without: "Online notes cannot be used. Everything else is unaffected." },
+      { id: "storage", name: "Files", feature: "Keeping your recordings, transcripts and notes", need: "required", status: "not_needed",
+        detail: "Stored on this computer in /Users/me/Library/Application Support/app.meetesh.desktop. No permission is needed for Meetesh's own folder.", can_request: false, opens_settings: false, switch: null, without: "Nothing could be saved." },
+    ];
+  };
   const onlineStatus = () => ({ ...online, keychain_error: null, presets: ONLINE_PRESETS });
 
   const find = (id: number) => meetings.find((m) => m.id === id)!;
@@ -336,6 +364,7 @@ export function installMock(variant: string) {
           startRecordingSim(a.meetingId, !!a.systemAudio);
           return { meeting: find(a.meetingId), system_audio_error: null };
         case "system_audio_support":
+          if (!perm.systemAudioOn) return { available: false, reason: "Recording the other participants is turned off in Settings > Permissions." };
           return variant === "nosystem"
             ? { available: false, reason: "Capturing the other participants is not available on Linux yet. Only your microphone is recorded." }
             : { available: true, reason: "" };
@@ -378,6 +407,20 @@ export function installMock(variant: string) {
           if (notesRunning === a.id) return { state: pausedFor() ? "paused" : "running", position: 0, paused_for: pausedFor() };
           if (notesLine.includes(a.id)) return { state: "queued", position: notesLine.indexOf(a.id) + (notesRunning !== null ? 1 : 0), paused_for: null };
           return { state: "idle", position: 0, paused_for: null };
+        case "list_permissions":
+          return permissionList();
+        case "request_permission":
+          if (a.id === "microphone") perm.mic = "granted";
+          else if (a.id === "system_audio") perm.screen = "granted";
+          return null;
+        case "open_system_settings":
+          (window as any).__openedSettings = a.id;
+          return null;
+        case "set_permission_switch":
+          if (a.id === "network") perm.networkOn = !!a.on;
+          else if (a.id === "system_audio") perm.systemAudioOn = !!a.on;
+          else throw "That permission has no switch inside Meetesh";
+          return permissionList();
         case "online_status":
           return onlineStatus();
         case "save_online": {
